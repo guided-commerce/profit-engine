@@ -101,9 +101,9 @@ const AVG_DAYS_PER_MONTH = 30.44;
 
 /* ─── scenario ─── */
 const mkScenario = (id, name) => ({
-  id, name, aov: 160, expenses: 20,
-  useDecay: true, startBudget: 10000, increment: 1000, numSteps: 20,
-  startCpa: 70, decayRate: 2, decayType: "linear",
+  id, name, aov: 150, expenses: 40,
+  useDecay: true, startBudget: 5000, increment: 1000, numSteps: 20,
+  startCpa: 50, decayRate: 2, decayType: "linear",
   /* expense breakdown */
   expenseBreakdown: false,
   processingFeePct: 2.9,
