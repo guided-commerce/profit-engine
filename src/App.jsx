@@ -222,7 +222,7 @@ const Glass = ({ children, style = {}, glow, C }) => (
     position: "relative", overflow: "hidden", ...style,
   }}>
     <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1, background: C.topEdge, pointerEvents: "none" }} />
-    <div style={{ position: "relative", zIndex: 1 }}>{children}</div>
+    <div style={{ position: "relative", zIndex: 1, overflow: "visible" }}>{children}</div>
   </div>
 );
 
@@ -251,7 +251,7 @@ const Toggle = ({ value, onChange, label, color, C }) => {
   );
 };
 
-/* ─── NumInput with custom steppers (FIXED: minWidth on center) ─── */
+/* ─── NumInput with custom steppers ─── */
 const NumInput = ({ label, value, onChange, prefix = "$", step = 1, min = 0, color, info, C, displayValue }) => {
   const [focused, setFocused] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -274,18 +274,18 @@ const NumInput = ({ label, value, onChange, prefix = "$", step = 1, min = 0, col
   const showPrefix = prefix !== undefined && prefix !== null && prefix !== "";
   const shown = editing ? editStr : (displayValue !== undefined ? displayValue : value);
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0, maxWidth: "100%" }}>
       {label && (
-        <label style={{ fontSize: 10, fontWeight: 600, color: C.dim, textTransform: "uppercase", letterSpacing: "0.08em", display: "flex", alignItems: "center", whiteSpace: "nowrap" }}>
+        <label style={{ fontSize: 10, fontWeight: 600, color: C.dim, textTransform: "uppercase", letterSpacing: "0.08em", display: "flex", alignItems: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
           {label}{info && <InfoTip text={info} C={C} />}
         </label>
       )}
-      <div style={{ display: "flex", alignItems: "stretch" }}>
+      <div style={{ display: "flex", alignItems: "stretch", width: "100%", maxWidth: "100%" }}>
         <button className="btn" onClick={dec}
           onMouseEnter={() => setHovL(true)} onMouseLeave={() => setHovL(false)}
           style={btnStyle("left", hovL)}
         >&minus;</button>
-        <div style={{ position: "relative", flex: 1, minWidth: 70 }}>
+        <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
           {showPrefix && <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: C.dim, fontSize: 13, fontWeight: 600, pointerEvents: "none", zIndex: 2 }}>{prefix}</span>}
           <input
             type="text" inputMode="decimal" value={shown}
@@ -293,7 +293,7 @@ const NumInput = ({ label, value, onChange, prefix = "$", step = 1, min = 0, col
             onBlur={e => { setFocused(false); setEditing(false); const v = parseFloat(e.target.value); if (isNaN(v)) onChange(min); }}
             onFocus={() => { setFocused(true); setEditing(true); setEditStr(String(value)); }}
             style={{
-              width: "100%", height: "100%", padding: `12px 10px 12px ${showPrefix ? 26 : 10}px`,
+              width: "100%", height: "100%", padding: `12px 8px 12px ${showPrefix ? 26 : 8}px`,
               background: focused ? C.inputFocusBg : C.inputBg,
               border: `1px solid ${focused ? C.mint : C.border}`,
               borderRadius: 0, borderLeft: "none", borderRight: "none",
@@ -697,7 +697,7 @@ export default function App() {
                   ) : (
                     /* Breakdown mode */
                     <div style={{ animation: "fadeScale 0.25s ease both" }}>
-                      <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fit, minmax(${r(140, 130, 999)}px, 1fr))`, gap: 10, marginBottom: 10 }}>
+                      <div style={{ display: "grid", gridTemplateColumns: bp.isMobile ? "1fr" : `repeat(auto-fit, minmax(${r(140, 130, 140)}px, 1fr))`, gap: 10, marginBottom: 10 }}>
                         <NumInput label="Processing Fee %" value={sc.processingFeePct ?? 2.9} onChange={v => upSc("processingFeePct", v)} prefix="" step={0.1} min={0} C={C}
                           displayValue={(sc.processingFeePct ?? 2.9).toFixed(1) + "%"}
                           info={`Payment processing fee as % of CLV. At ${fmtC(sc.aov)} CLV = ${fmtC(sc.aov * (sc.processingFeePct || 2.9) / 100)}/order`} />
@@ -707,7 +707,7 @@ export default function App() {
                           displayValue={(sc.fulfillmentPerOrder ?? 3).toFixed(2)}
                           info="Pick, pack, and handling costs per order." />
                       </div>
-                      <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fit, minmax(${r(140, 130, 999)}px, 1fr))`, gap: 10, marginBottom: 10 }}>
+                      <div style={{ display: "grid", gridTemplateColumns: bp.isMobile ? "1fr" : `repeat(auto-fit, minmax(${r(140, 130, 140)}px, 1fr))`, gap: 10, marginBottom: 10 }}>
                         <NumInput label="COGS / Order" value={sc.cogsPerOrder ?? 10} onChange={v => upSc("cogsPerOrder", v)} step={0.5} C={C}
                           displayValue={(sc.cogsPerOrder ?? 10).toFixed(2)}
                           info="Cost of goods sold. The direct cost of the product(s) in this order." />
@@ -757,17 +757,17 @@ export default function App() {
                 </div>
                 {sc.useDecay ? (
                   <>
-                    <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fit, minmax(${r(140, 130, 999)}px, 1fr))`, gap: 12, marginBottom: 14 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: bp.isMobile ? "1fr" : `repeat(auto-fit, minmax(${r(140, 130, 140)}px, 1fr))`, gap: 12, marginBottom: 14 }}>
                       <NumInput label="Starting Daily Budget" value={sc.startBudget} onChange={v => upSc("startBudget", v)} step={1000} C={C} />
                       <NumInput label="Increment" value={sc.increment} onChange={v => upSc("increment", v)} step={500} C={C} />
                       <NumInput label="# of Steps" value={sc.numSteps} onChange={v => upSc("numSteps", Math.max(2, Math.min(30, Math.round(v))))} prefix="" step={1} C={C} />
                     </div>
-                    <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fit, minmax(${r(160, 150, 999)}px, 1fr))`, gap: 12, marginBottom: 16 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: bp.isMobile ? "1fr" : `repeat(auto-fit, minmax(${r(160, 150, 160)}px, 1fr))`, gap: 12, marginBottom: 16 }}>
                       <NumInput label="Starting CPA" value={sc.startCpa} onChange={v => upSc("startCpa", v)} step={0.5} C={C} displayValue={sc.startCpa.toFixed(2)} />
                       <NumInput label={decayRateLabel} value={sc.decayRate} onChange={v => upSc("decayRate", v)} prefix={decayRatePrefix} step={decayRateStep} C={C}
                         info={decayRateInfo} displayValue={sc.decayType === "linear" ? sc.decayRate.toFixed(2) : sc.decayRate} />
                     </div>
-                    <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fit, minmax(${r(140, 130, 999)}px, 1fr))`, gap: 8, marginBottom: 12 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: bp.isMobile ? "1fr" : `repeat(auto-fit, minmax(${r(140, 130, 140)}px, 1fr))`, gap: 8, marginBottom: 12 }}>
                       {Object.entries(DECAY_INFO).map(([key, info]) => {
                         const active = sc.decayType === key;
                         return (
