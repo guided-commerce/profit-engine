@@ -89,6 +89,7 @@ const decayFns = {
   exponential: (b, r, s) => b * Math.pow(1 + r, s),
   logarithmic: (b, r, s) => b * (1 + r * Math.log(s + 1)),
 };
+const DECAY_DEFAULTS = { linear: 2, exponential: 0.05, logarithmic: 0.3 };
 const DECAY_INFO = {
   linear: { label: "Linear", desc: "CPA increases by a fixed dollar amount per step. Predictable, steady increase.", icon: "\u27CB" },
   exponential: { label: "Exponential", desc: "CPA accelerates faster at higher budgets. Compounding growth per step.", icon: "\u2934" },
@@ -134,18 +135,10 @@ const calcTier = (budget, cpa, aov, expenses) => {
 
 /* ─── Mini CPA Decay Chart SVG ─── */
 const MiniDecayChart = ({ type, active, C }) => {
-  // Use distinct representative params per type so each curve shape is clearly different
   const pts = (() => {
     const n = 12;
-    if (type === "linear") {
-      // Straight line: y = 1 + 0.08 * i
-      return Array.from({ length: n }, (_, i) => 1 + 0.08 * i);
-    }
-    if (type === "exponential") {
-      // Exponential: y = 1 * (1.12)^i
-      return Array.from({ length: n }, (_, i) => Math.pow(1.12, i));
-    }
-    // Logarithmic: y = 1 + 0.5 * ln(i+1)
+    if (type === "linear") return Array.from({ length: n }, (_, i) => 1 + 0.08 * i);
+    if (type === "exponential") return Array.from({ length: n }, (_, i) => Math.pow(1.12, i));
     return Array.from({ length: n }, (_, i) => 1 + 0.5 * Math.log(i + 1));
   })();
   const minV = Math.min(...pts);
@@ -173,6 +166,7 @@ const InfoTip = ({ text, C }) => {
     <span style={{ position: "relative", display: "inline-flex", alignItems: "center", marginLeft: 6 }}>
       <span
         onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}
+        onClick={() => setShow(!show)}
         style={{
           width: 16, height: 16, borderRadius: "50%", display: "inline-flex", alignItems: "center", justifyContent: "center",
           background: C.inputBg, border: `1px solid ${C.border}`, cursor: "help",
@@ -183,9 +177,10 @@ const InfoTip = ({ text, C }) => {
       {show && (
         <div style={{
           position: "absolute", bottom: "calc(100% + 8px)", left: "50%", transform: "translateX(-50%)",
-          width: 260, padding: "12px 14px", background: C.infoBg, backdropFilter: "blur(20px)",
+          width: 280, padding: "12px 14px", background: C.infoBg, backdropFilter: "blur(20px)",
           border: `1px solid ${C.borderLt}`, borderRadius: 12, boxShadow: `0 20px 60px ${C.shadowHeavy}`,
-          fontSize: 12, lineHeight: 1.5, color: C.sub, zIndex: 100, animation: "tipIn 0.2s ease"
+          fontSize: 12, lineHeight: 1.5, color: C.sub, zIndex: 100, animation: "tipIn 0.2s ease",
+          whiteSpace: "normal", wordWrap: "break-word",
         }}>{text}
           <div style={{ position: "absolute", bottom: -5, left: "50%", transform: "translateX(-50%) rotate(45deg)", width: 10, height: 10, background: C.infoBg, border: `1px solid ${C.borderLt}`, borderTop: "none", borderLeft: "none" }} />
         </div>
@@ -392,6 +387,7 @@ export default function App() {
   const [sensiAxis, setSensiAxis] = useState(() => savedState?.sensiAxis || "cpa");
   const [sensiRange, setSensiRange] = useState(() => savedState?.sensiRange || 30);
   const [activeTab, setActiveTab] = useState(() => savedState?.activeTab || "profit");
+  const [showGuide, setShowGuide] = useState(false);
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setTimeout(() => setMounted(true), 50); }, []);
 
@@ -406,6 +402,14 @@ export default function App() {
     if (s.id !== activeId) return s;
     const t = [...s.manualTiers]; t[i] = { ...t[i], [f]: v }; return { ...s, manualTiers: t };
   })), [activeId]);
+
+  // Switch decay type with realistic defaults
+  const switchDecayType = useCallback((newType) => {
+    setScenarios(p => p.map(s => {
+      if (s.id !== activeId) return s;
+      return { ...s, decayType: newType, decayRate: DECAY_DEFAULTS[newType] };
+    }));
+  }, [activeId]);
 
   const tiers = useMemo(() => {
     if (!sc.useDecay) return sc.manualTiers;
@@ -452,14 +456,14 @@ export default function App() {
   const isComparing = showCompare && scenarios.length > 1;
 
   // Decay rate label/info helpers
-  const decayRateLabel = sc.decayType === "linear" ? "CPA Increase / Step" : "Decay Rate";
+  const decayRateLabel = sc.decayType === "linear" ? "CPA Increase / Step" : "CPA Efficiency Decay";
   const decayRatePrefix = sc.decayType === "linear" ? "$" : "";
   const decayRateStep = sc.decayType === "linear" ? 0.5 : 0.01;
   const decayRateInfo = sc.decayType === "linear"
-    ? "Dollar amount CPA increases per budget step. e.g. $2 means CPA goes from $15 to $17, $19, $21, etc."
+    ? "Dollar amount CPA increases per budget step. e.g. $2 means CPA goes from $70 to $72, $74, $76, etc."
     : sc.decayType === "exponential"
-      ? "The rate at which CPA compounds per step. 0.12 means CPA grows ~12% per budget increment."
-      : "Logarithmic scaling factor. Higher = steeper initial CPA rise that flattens over time.";
+      ? "The rate at which CPA compounds per step. 0.05 means CPA grows ~5% per budget increment. Typical range: 0.03\u20130.10."
+      : "Logarithmic scaling factor. Higher = steeper initial CPA rise that flattens over time. Typical range: 0.2\u20130.5.";
 
   // Auto tiers header label
   const tiersHeaderLabel = sc.decayType === "linear"
@@ -520,7 +524,7 @@ export default function App() {
         transition: "all 0.9s cubic-bezier(0.2, 0, 0, 1)",
       }}>
         {/* HEADER */}
-        <div style={{ marginBottom: r(40, 32, 24), animation: "slideUp 0.6s cubic-bezier(0.2,0,0,1) 0.1s both" }}>
+        <div style={{ marginBottom: r(32, 26, 20), animation: "slideUp 0.6s cubic-bezier(0.2,0,0,1) 0.1s both" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <div style={{ width: 10, height: 10, borderRadius: "50%", background: `linear-gradient(135deg, ${C.mint}, ${C.cyan})`, boxShadow: `0 0 14px ${C.mintG}`, animation: "breathe 3s ease-in-out infinite" }} />
@@ -531,9 +535,23 @@ export default function App() {
           <h1 style={{ fontSize: r(38, 30, 24), fontWeight: 800, color: C.text, lineHeight: 1.1, letterSpacing: "-0.02em" }}>
             {"Profit "}<span style={{ backgroundImage: `linear-gradient(135deg, ${C.mint}, ${C.cyan})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", color: "transparent" }}>Curve</span>
           </h1>
-          <p style={{ fontSize: r(14, 13, 12), color: C.sub, marginTop: 8, maxWidth: 640, lineHeight: 1.6 }}>
-            Model diminishing returns with auto-scaling CPA decay and stress-test your unit economics before you scale.
+          <p style={{ fontSize: r(14, 13, 12), color: C.sub, marginTop: 8, maxWidth: 720, lineHeight: 1.6 }}>
+            Find where profit peaks before diminishing returns erode your margins. Model your CPA scaling curve, stress-test unit economics, and find the exact daily budget that maximizes net profit.
           </p>
+          <button className="btn" onClick={() => setShowGuide(!showGuide)} style={{
+            marginTop: 10, padding: "6px 14px", borderRadius: 10, fontSize: 11, fontWeight: 600,
+            background: showGuide ? C.mintD : "transparent", border: `1px solid ${showGuide ? C.mint + "30" : C.border}`,
+            color: showGuide ? C.mint : C.sub,
+          }}>{showGuide ? "\u25B2 Hide Guide" : "\u25BC How to Use This Tool"}</button>
+          {showGuide && (
+            <div style={{ marginTop: 12, padding: r("18px 22px", "16px 18px", "14px 16px"), background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, fontSize: r(13, 12, 12), color: C.sub, lineHeight: 1.7, animation: "fadeScale 0.3s ease both", maxWidth: 800 }}>
+              <div style={{ fontWeight: 700, color: C.text, marginBottom: 8, fontSize: r(14, 13, 12) }}>Getting the most out of Profit Curve:</div>
+              <div style={{ marginBottom: 6 }}><strong style={{ color: C.mint }}>1. Set your Customer Lifetime Value.</strong> Use AOV (first order value) to model first-purchase profitability, or use actual LTV to model long-term profitability over the full customer lifecycle. Higher CLV gives you more room to spend on acquisition.</div>
+              <div style={{ marginBottom: 6 }}><strong style={{ color: C.amber }}>2. Account for CPA changes with CLV.</strong> Remember: when your AOV/CLV increases, your CPA typically increases too. Higher-priced products attract fewer impulse buyers and face more competition. Always model both together.</div>
+              <div style={{ marginBottom: 6 }}><strong style={{ color: C.blue }}>3. Model your CPA scaling curve.</strong> As you increase ad spend, CPA rises because you exhaust your best audiences first. Choose the decay model that matches your account behavior and find the sweet spot where profit peaks.</div>
+              <div><strong style={{ color: C.purple }}>4. Use Sensitivity Analysis.</strong> Stress-test your peak budget against CPA and AOV shifts. If a small CPA increase wipes out your profit, your margin of safety is too thin.</div>
+            </div>
+          )}
         </div>
 
         {/* ─── SCENARIO BAR ─── */}
@@ -600,13 +618,14 @@ export default function App() {
                   <span style={{ fontSize: 14 }}>{"\u25C8"}</span> Unit Economics
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fit, minmax(${r(160, 150, 999)}px, 1fr))`, gap: 14 }}>
-                  <NumInput label="Average Order Value" value={sc.aov} onChange={v => upSc("aov", v)} step={0.5} C={C} displayValue={sc.aov.toFixed(2)} />
+                  <NumInput label="Customer Lifetime Value" value={sc.aov} onChange={v => upSc("aov", v)} step={0.5} C={C} displayValue={sc.aov.toFixed(2)}
+                    info="Use AOV (average order value) for first-purchase profitability, or use full LTV (lifetime value) to model long-term profitability across all repeat purchases. Higher CLV allows higher CPA." />
                   <NumInput label="Avg Expenses / Order" value={sc.expenses} onChange={v => upSc("expenses", v)} step={0.5} C={C} displayValue={sc.expenses.toFixed(2)}
                     info="Include ALL variable costs per order: COGS (product cost), shipping, fulfillment/pick-pack, payment processing fees, packaging, and returns/refund allowance." />
                 </div>
                 <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                   <Metric small label="Margin Before Ads" value={fmtP(((sc.aov - sc.expenses) / sc.aov) * 100)} color={C.mint} C={C} />
-                  <Metric small label="Break-Even CPA" value={`$${breakevenCpa.toFixed(2)}`} sub="absolute max CPA" color={C.amber} C={C} />
+                  <Metric small label="Break-Even CPA" value={fmtC(breakevenCpa)} sub="absolute max CPA" color={C.amber} C={C} />
                 </div>
               </Glass>
 
@@ -629,11 +648,11 @@ export default function App() {
                       <NumInput label={decayRateLabel} value={sc.decayRate} onChange={v => upSc("decayRate", v)} prefix={decayRatePrefix} step={decayRateStep} C={C}
                         info={decayRateInfo} displayValue={sc.decayType === "linear" ? sc.decayRate.toFixed(2) : sc.decayRate} />
                     </div>
-                    <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fit, minmax(${r(140, 130, 999)}px, 1fr))`, gap: 8 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fit, minmax(${r(140, 130, 999)}px, 1fr))`, gap: 8, marginBottom: 12 }}>
                       {Object.entries(DECAY_INFO).map(([key, info]) => {
                         const active = sc.decayType === key;
                         return (
-                          <div key={key} className="decay-card" onClick={() => upSc("decayType", key)} style={{
+                          <div key={key} className="decay-card" onClick={() => switchDecayType(key)} style={{
                             padding: "12px", borderRadius: 14,
                             background: active ? `linear-gradient(145deg, ${C.cyanD}, ${C.cyan}08)` : C.card,
                             border: `1px solid ${active ? C.cyan + "35" : C.border}`,
@@ -645,6 +664,9 @@ export default function App() {
                           </div>
                         );
                       })}
+                    </div>
+                    <div style={{ padding: "10px 14px", background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, fontSize: 11, color: C.dim, lineHeight: 1.5 }}>
+                      <strong style={{ color: C.sub }}>Tip:</strong> Check your Facebook Ads Manager at the ad set level. The "Estimated Results" graph shows how your CPA scales with spend. Use linear for steady increases, exponential for aggressive scaling, or logarithmic if CPA plateaus.
                     </div>
                   </>
                 ) : (
@@ -663,7 +685,7 @@ export default function App() {
                   <button className="btn" onClick={addManualTier} style={{ padding: "7px 14px", borderRadius: 10, background: C.mintD, border: `1px solid ${C.mint}20`, color: C.mint, fontSize: 11, fontWeight: 600 }}>+ Tier</button>
                 </div>
                 <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-                  <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: "0 3px", minWidth: bp.isMobile ? 680 : "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: "0 3px", minWidth: 680 }}>
                     <thead><tr>{["Daily Budget", "CPA", "Orders", "Revenue", "Net Profit", "Margin", "ROAS", ""].map(h => {
                       const isRight = ["Orders", "Revenue", "Net Profit"].includes(h);
                       return <th key={h} style={{ padding: "6px 10px", fontSize: 9, fontWeight: 700, color: C.dim, textTransform: "uppercase", letterSpacing: "0.1em", textAlign: isRight ? "right" : "left", whiteSpace: "nowrap" }}>{h}</th>;
@@ -700,7 +722,7 @@ export default function App() {
                   </div>
                 </div>
                 <div style={{ overflowX: "auto", maxHeight: 360, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
-                  <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: "0 2px", minWidth: bp.isMobile ? 680 : "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: "0 2px", minWidth: 680 }}>
                     <thead style={{ position: "sticky", top: 0, zIndex: 2 }}><tr>
                       {["#", "Daily Budget", "CPA", "Orders", "Revenue", "Net Profit", "Margin", "ROAS"].map(h => {
                         const isRight = ["Daily Budget", "CPA", "Orders", "Revenue", "Net Profit"].includes(h);
@@ -881,11 +903,11 @@ export default function App() {
           <Glass style={{ padding: gpL }} glow C={C}>
             <div style={{ marginBottom: 22 }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: C.sub, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4, display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 14 }}>{"\u25CE"}</span> Sensitivity Analysis</div>
-              <div style={{ fontSize: r(20, 18, 16), fontWeight: 700, color: C.text }}>What if {sensiAxis === "cpa" ? "CPA" : "AOV"} shifts at peak daily budget?</div>
+              <div style={{ fontSize: r(20, 18, 16), fontWeight: 700, color: C.text }}>What if {sensiAxis === "cpa" ? "CPA" : "CLV"} shifts at peak daily budget?</div>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
               <span style={{ fontSize: 12, color: C.sub, fontWeight: 500 }}>Stress Test:</span>
-              {[["cpa", "CPA Variance", C.amber], ["aov", "AOV Variance", C.blue]].map(([k, l, c]) => (
+              {[["cpa", "CPA Variance", C.amber], ["aov", "CLV Variance", C.blue]].map(([k, l, c]) => (
                 <button key={k} className="btn" onClick={() => setSensiAxis(k)} style={{
                   padding: "8px 14px", borderRadius: 10, fontSize: 12, fontWeight: 600,
                   background: sensiAxis === k ? `${c}15` : "transparent", border: `1px solid ${sensiAxis === k ? c + "40" : C.border}`, color: sensiAxis === k ? c : C.sub,
@@ -900,13 +922,13 @@ export default function App() {
               ))}
             </div>
             <div style={{ marginBottom: 18, padding: "12px 16px", background: C.card, borderRadius: 12, border: `1px solid ${C.border}`, fontSize: 12, color: C.sub, lineHeight: 1.5 }}>
-              Testing at <strong style={{ color: C.text }}>{fmt(peak.budget)}/day budget</strong> with base <strong style={{ color: C.text }}>{sensiAxis === "cpa" ? `CPA $${peak.cpa.toFixed(2)}` : `AOV $${sc.aov.toFixed(2)}`}</strong>. Break-even CPA: <strong style={{ color: C.amber }}>${breakevenCpa.toFixed(2)}</strong>
+              Testing at <strong style={{ color: C.text }}>{fmt(peak.budget)}/day budget</strong> with base <strong style={{ color: C.text }}>{sensiAxis === "cpa" ? `CPA ${fmtC(peak.cpa)}` : `CLV ${fmtC(sc.aov)}`}</strong>. Break-even CPA: <strong style={{ color: C.amber }}>{fmtC(breakevenCpa)}</strong>
             </div>
             <ResponsiveContainer width="100%" height={chartH3}>
               <AreaChart data={sensiData} margin={{ top: 10, right: r(30, 20, 10), left: r(20, 10, 0), bottom: 10 }}>
                 <defs><linearGradient id="sg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={sensiAxis === "cpa" ? C.amber : C.blue} stopOpacity={0.18} /><stop offset="100%" stopColor={sensiAxis === "cpa" ? C.amber : C.blue} stopOpacity={0} /></linearGradient></defs>
                 <CartesianGrid strokeDasharray="3 3" stroke={C.gridLine} />
-                <XAxis dataKey="label" tick={{ fontSize: 11, fill: C.sub }} axisLine={{ stroke: C.border }} tickLine={false} label={{ value: `${sensiAxis === "cpa" ? "CPA" : "AOV"} Change`, position: "insideBottom", offset: -5, style: { fontSize: 10, fill: C.dim } }} />
+                <XAxis dataKey="label" tick={{ fontSize: 11, fill: C.sub }} axisLine={{ stroke: C.border }} tickLine={false} label={{ value: `${sensiAxis === "cpa" ? "CPA" : "CLV"} Change`, position: "insideBottom", offset: -5, style: { fontSize: 10, fill: C.dim } }} />
                 <YAxis tick={{ fontSize: 11, fill: C.sub }} axisLine={{ stroke: C.border }} tickLine={false} tickFormatter={v => fmt(v)} />
                 <Tooltip content={<ChartTip C={C} />} />
                 <ReferenceLine y={0} stroke={C.red} strokeDasharray="4 4" strokeOpacity={0.4} />
