@@ -80,6 +80,7 @@ const useBreakpoint = () => {
 /* ─── helpers ─── */
 const fmt = n => { if (Math.abs(n) >= 1e6) return `$${(n / 1e6).toFixed(2)}M`; if (Math.abs(n) >= 1e3) return `$${(n / 1e3).toFixed(1)}K`; return `$${n.toFixed(0)}`; };
 const fmtF = n => `$${n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+const fmtC = n => `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const fmtP = n => `${n.toFixed(1)}%`;
 
 /* ─── decay ─── */
@@ -98,7 +99,7 @@ const DECAY_INFO = {
 const mkScenario = (id, name) => ({
   id, name, aov: 160, expenses: 20,
   useDecay: true, startBudget: 10000, increment: 1000, numSteps: 20,
-  startCpa: 15, decayRate: 2, decayType: "linear",
+  startCpa: 70, decayRate: 2, decayType: "linear",
   manualTiers: [
     { budget: 10000, cpa: 18 }, { budget: 15000, cpa: 22 },
     { budget: 20000, cpa: 28 }, { budget: 25000, cpa: 36 }, { budget: 30000, cpa: 48 },
@@ -237,8 +238,10 @@ const Toggle = ({ value, onChange, label, color, C }) => {
 };
 
 /* ─── NumInput with custom steppers ─── */
-const NumInput = ({ label, value, onChange, prefix = "$", step = 1, min = 0, color, info, C }) => {
+const NumInput = ({ label, value, onChange, prefix = "$", step = 1, min = 0, color, info, C, displayValue }) => {
   const [focused, setFocused] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editStr, setEditStr] = useState("");
   const inc = () => onChange(Math.round((value + step) * 1000) / 1000);
   const dec = () => onChange(Math.max(min, Math.round((value - step) * 1000) / 1000));
   const [hovL, setHovL] = useState(false);
@@ -255,10 +258,11 @@ const NumInput = ({ label, value, onChange, prefix = "$", step = 1, min = 0, col
     padding: 0, outline: "none",
   });
   const showPrefix = prefix !== undefined && prefix !== null && prefix !== "";
+  const shown = editing ? editStr : (displayValue !== undefined ? displayValue : value);
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
       {label && (
-        <label style={{ fontSize: 10, fontWeight: 600, color: C.dim, textTransform: "uppercase", letterSpacing: "0.08em", display: "flex", alignItems: "center" }}>
+        <label style={{ fontSize: 10, fontWeight: 600, color: C.dim, textTransform: "uppercase", letterSpacing: "0.08em", display: "flex", alignItems: "center", whiteSpace: "nowrap" }}>
           {label}{info && <InfoTip text={info} C={C} />}
         </label>
       )}
@@ -270,10 +274,10 @@ const NumInput = ({ label, value, onChange, prefix = "$", step = 1, min = 0, col
         <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
           {showPrefix && <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: C.dim, fontSize: 13, fontWeight: 600, pointerEvents: "none", zIndex: 2 }}>{prefix}</span>}
           <input
-            type="text" inputMode="decimal" value={value}
-            onChange={e => { const v = parseFloat(e.target.value); if (!isNaN(v)) onChange(v); }}
-            onBlur={e => { setFocused(false); const v = parseFloat(e.target.value); if (isNaN(v)) onChange(min); }}
-            onFocus={() => setFocused(true)}
+            type="text" inputMode="decimal" value={shown}
+            onChange={e => { setEditStr(e.target.value); const v = parseFloat(e.target.value); if (!isNaN(v)) onChange(v); }}
+            onBlur={e => { setFocused(false); setEditing(false); const v = parseFloat(e.target.value); if (isNaN(v)) onChange(min); }}
+            onFocus={() => { setFocused(true); setEditing(true); setEditStr(String(value)); }}
             style={{
               width: "100%", height: "100%", padding: `12px 14px 12px ${showPrefix ? 28 : 14}px`,
               background: focused ? C.inputFocusBg : C.inputBg,
@@ -362,51 +366,6 @@ const ThemeSelector = ({ theme, setTheme, C, isMobile }) => (
   </div>
 );
 
-/* ─── Optimal Budget Banner ─── */
-const OptimalBanner = ({ peak, C, r: rFn, isMobile }) => (
-  <div style={{
-    background: `linear-gradient(135deg, ${C.optimalBg}, ${C.mint}04)`,
-    border: `1px solid ${C.optimalBorder}`,
-    borderRadius: 16, padding: rFn ? rFn("16px 24px", "14px 20px", "14px 16px") : "16px 24px",
-    display: "flex", alignItems: isMobile ? "flex-start" : "center",
-    flexDirection: isMobile ? "column" : "row",
-    gap: isMobile ? 10 : 20,
-    marginBottom: 16,
-    backdropFilter: "blur(20px)",
-    boxShadow: `0 0 40px ${C.mint}08`,
-    animation: "fadeScale 0.5s cubic-bezier(0.2,0,0,1) both",
-  }}>
-    <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-      <div style={{
-        width: 40, height: 40, borderRadius: 12,
-        background: `linear-gradient(135deg, ${C.mint}20, ${C.cyan}15)`,
-        display: "flex", alignItems: "center", justifyContent: "center",
-        border: `1px solid ${C.mint}25`,
-        boxShadow: `0 0 20px ${C.mint}10`,
-      }}>
-        <span style={{ fontSize: 20 }}>{"\u2728"}</span>
-      </div>
-      <div>
-        <div style={{ fontSize: 10, fontWeight: 700, color: C.mint, textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 2 }}>Optimal Daily Budget</div>
-        <div style={{ fontSize: 28, fontWeight: 800, color: C.mint, fontFamily: "'JetBrains Mono', monospace", letterSpacing: "-0.02em", lineHeight: 1 }}>{fmtF(peak.budget)}<span style={{ fontSize: 14, fontWeight: 500, color: C.sub, marginLeft: 4 }}>/day</span></div>
-      </div>
-    </div>
-    <div style={{ display: "flex", gap: isMobile ? 16 : 24, flexWrap: "wrap" }}>
-      <div>
-        <div style={{ fontSize: 9, fontWeight: 600, color: C.dim, textTransform: "uppercase", letterSpacing: "0.1em" }}>Peak Profit</div>
-        <div style={{ fontSize: 18, fontWeight: 700, color: C.text, fontFamily: "'JetBrains Mono', monospace" }}>{fmtF(Math.round(peak.net))}</div>
-      </div>
-      <div>
-        <div style={{ fontSize: 9, fontWeight: 600, color: C.dim, textTransform: "uppercase", letterSpacing: "0.1em" }}>CPA at Peak</div>
-        <div style={{ fontSize: 18, fontWeight: 700, color: C.amber, fontFamily: "'JetBrains Mono', monospace" }}>${peak.cpa.toFixed(2)}</div>
-      </div>
-      <div>
-        <div style={{ fontSize: 9, fontWeight: 600, color: C.dim, textTransform: "uppercase", letterSpacing: "0.1em" }}>ROAS</div>
-        <div style={{ fontSize: 18, fontWeight: 700, color: C.blue, fontFamily: "'JetBrains Mono', monospace" }}>{peak.roas.toFixed(2)}x</div>
-      </div>
-    </div>
-  </div>
-);
 
 /* ══════════════════════════ MAIN ══════════════════════════ */
 export default function App() {
@@ -631,21 +590,18 @@ export default function App() {
           )}
         </div>
 
-        {/* ─── OPTIMAL BUDGET BANNER (always visible) ─── */}
-        {!isComparing && <OptimalBanner peak={peak} C={C} r={r} isMobile={bp.isMobile} />}
-
         {/* ─── INPUTS (hidden in compare mode) ─── */}
         {!isComparing && (
           <>
             {/* ROW 1: Economics + Decay */}
-            <div style={{ display: "grid", gridTemplateColumns: r("1fr 1fr", "1fr 1fr", "1fr"), gap: 16, marginBottom: 16, animation: "fadeScale 0.5s cubic-bezier(0.2,0,0,1) both" }}>
+            <div style={{ display: "grid", gridTemplateColumns: r("1fr 1fr", "1fr 1fr", "1fr"), gap: 16, marginBottom: 16, animation: "fadeScale 0.5s cubic-bezier(0.2,0,0,1) both", minWidth: 0 }}>
               <Glass style={{ padding: gp }} C={C}>
                 <div style={{ fontSize: 11, fontWeight: 600, color: C.sub, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 18, display: "flex", alignItems: "center", gap: 8 }}>
                   <span style={{ fontSize: 14 }}>{"\u25C8"}</span> Unit Economics
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: r("1fr 1fr", "1fr 1fr", "1fr"), gap: 14 }}>
-                  <NumInput label="Average Order Value" value={sc.aov} onChange={v => upSc("aov", v)} step={0.01} C={C} />
-                  <NumInput label="Avg Expenses / Order" value={sc.expenses} onChange={v => upSc("expenses", v)} step={0.5} C={C}
+                <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fit, minmax(${r(160, 150, 999)}px, 1fr))`, gap: 14 }}>
+                  <NumInput label="Average Order Value" value={sc.aov} onChange={v => upSc("aov", v)} step={0.5} C={C} displayValue={sc.aov.toFixed(2)} />
+                  <NumInput label="Avg Expenses / Order" value={sc.expenses} onChange={v => upSc("expenses", v)} step={0.5} C={C} displayValue={sc.expenses.toFixed(2)}
                     info="Include ALL variable costs per order: COGS (product cost), shipping, fulfillment/pick-pack, payment processing fees, packaging, and returns/refund allowance." />
                 </div>
                 <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -663,17 +619,17 @@ export default function App() {
                 </div>
                 {sc.useDecay ? (
                   <>
-                    <div style={{ display: "grid", gridTemplateColumns: r("1fr 1fr 1fr", "1fr 1fr 1fr", "1fr"), gap: 12, marginBottom: 14 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fit, minmax(${r(140, 130, 999)}px, 1fr))`, gap: 12, marginBottom: 14 }}>
                       <NumInput label="Starting Daily Budget" value={sc.startBudget} onChange={v => upSc("startBudget", v)} step={1000} C={C} />
                       <NumInput label="Increment" value={sc.increment} onChange={v => upSc("increment", v)} step={500} C={C} />
                       <NumInput label="# of Steps" value={sc.numSteps} onChange={v => upSc("numSteps", Math.max(2, Math.min(30, Math.round(v))))} prefix="" step={1} C={C} />
                     </div>
-                    <div style={{ display: "grid", gridTemplateColumns: r("1fr 1fr", "1fr 1fr", "1fr"), gap: 12, marginBottom: 16 }}>
-                      <NumInput label="Starting CPA" value={sc.startCpa} onChange={v => upSc("startCpa", v)} step={0.5} C={C} />
+                    <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fit, minmax(${r(160, 150, 999)}px, 1fr))`, gap: 12, marginBottom: 16 }}>
+                      <NumInput label="Starting CPA" value={sc.startCpa} onChange={v => upSc("startCpa", v)} step={0.5} C={C} displayValue={sc.startCpa.toFixed(2)} />
                       <NumInput label={decayRateLabel} value={sc.decayRate} onChange={v => upSc("decayRate", v)} prefix={decayRatePrefix} step={decayRateStep} C={C}
-                        info={decayRateInfo} />
+                        info={decayRateInfo} displayValue={sc.decayType === "linear" ? sc.decayRate.toFixed(2) : sc.decayRate} />
                     </div>
-                    <div style={{ display: "grid", gridTemplateColumns: r("1fr 1fr 1fr", "1fr 1fr 1fr", "1fr"), gap: 8 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fit, minmax(${r(140, 130, 999)}px, 1fr))`, gap: 8 }}>
                       {Object.entries(DECAY_INFO).map(([key, info]) => {
                         const active = sc.decayType === key;
                         return (
@@ -707,22 +663,24 @@ export default function App() {
                   <button className="btn" onClick={addManualTier} style={{ padding: "7px 14px", borderRadius: 10, background: C.mintD, border: `1px solid ${C.mint}20`, color: C.mint, fontSize: 11, fontWeight: 600 }}>+ Tier</button>
                 </div>
                 <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-                  <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: "0 3px", minWidth: bp.isMobile ? 600 : "auto" }}>
-                    <thead><tr>{["Daily Budget", "CPA", "Orders", "Revenue", "Net Profit", "Margin", "ROAS", ""].map(h => (
-                      <th key={h} style={{ padding: "6px 10px", fontSize: 9, fontWeight: 700, color: C.dim, textTransform: "uppercase", letterSpacing: "0.1em", textAlign: "left", whiteSpace: "nowrap" }}>{h}</th>
-                    ))}</tr></thead>
+                  <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: "0 3px", minWidth: bp.isMobile ? 680 : "auto" }}>
+                    <thead><tr>{["Daily Budget", "CPA", "Orders", "Revenue", "Net Profit", "Margin", "ROAS", ""].map(h => {
+                      const isRight = ["Orders", "Revenue", "Net Profit"].includes(h);
+                      return <th key={h} style={{ padding: "6px 10px", fontSize: 9, fontWeight: 700, color: C.dim, textTransform: "uppercase", letterSpacing: "0.1em", textAlign: isRight ? "right" : "left", whiteSpace: "nowrap" }}>{h}</th>;
+                    })}</tr></thead>
                     <tbody>
                       {sc.manualTiers.map((t, i) => {
                         const d = calcTier(t.budget, t.cpa, sc.aov, sc.expenses);
+                        const mono = "'JetBrains Mono',monospace";
                         return (
                           <tr key={i} className="tier-row" style={{ animation: `slideUp 0.25s ease ${i * 0.04}s both` }}>
-                            <td style={{ padding: "8px 10px" }}><input type="number" value={t.budget} onChange={e => upManTier(i, "budget", parseFloat(e.target.value) || 0)} step={1000} style={{ width: 90, background: "transparent", border: `1px solid ${C.border}`, borderRadius: 8, color: C.text, fontSize: 13, fontWeight: 600, fontFamily: "'JetBrains Mono',monospace", padding: "6px 8px", outline: "none" }} /></td>
-                            <td style={{ padding: "8px 10px" }}><input type="number" value={t.cpa} onChange={e => upManTier(i, "cpa", parseFloat(e.target.value) || 1)} step={1} style={{ width: 65, background: "transparent", border: `1px solid ${C.border}`, borderRadius: 8, color: C.amber, fontSize: 13, fontWeight: 600, fontFamily: "'JetBrains Mono',monospace", padding: "6px 8px", outline: "none" }} /></td>
-                            <td style={{ padding: "8px 10px", fontSize: 13, fontWeight: 600, fontFamily: "'JetBrains Mono',monospace", color: C.sub }}>{Math.round(d.orders).toLocaleString()}</td>
-                            <td style={{ padding: "8px 10px", fontSize: 13, fontWeight: 600, fontFamily: "'JetBrains Mono',monospace", color: C.blue }}>{fmtF(Math.round(d.revenue))}</td>
-                            <td style={{ padding: "8px 10px", fontSize: 13, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", color: d.net >= 0 ? C.mint : C.red }}>{fmtF(Math.round(d.net))}</td>
-                            <td style={{ padding: "8px 10px", fontSize: 13, fontWeight: 600, fontFamily: "'JetBrains Mono',monospace", color: d.margin >= 20 ? C.mint : d.margin >= 0 ? C.amber : C.red }}>{fmtP(d.margin)}</td>
-                            <td style={{ padding: "8px 10px", fontSize: 13, fontWeight: 600, fontFamily: "'JetBrains Mono',monospace", color: d.roas >= 2 ? C.mint : d.roas >= 1 ? C.amber : C.red }}>{d.roas.toFixed(2)}x</td>
+                            <td style={{ padding: "8px 10px" }}><input type="number" value={t.budget} onChange={e => upManTier(i, "budget", parseFloat(e.target.value) || 0)} step={1000} style={{ width: 90, background: "transparent", border: `1px solid ${C.border}`, borderRadius: 8, color: C.text, fontSize: 13, fontWeight: 600, fontFamily: mono, padding: "6px 8px", outline: "none" }} /></td>
+                            <td style={{ padding: "8px 10px" }}><input type="number" value={t.cpa} onChange={e => upManTier(i, "cpa", parseFloat(e.target.value) || 1)} step={1} style={{ width: 65, background: "transparent", border: `1px solid ${C.border}`, borderRadius: 8, color: C.amber, fontSize: 13, fontWeight: 600, fontFamily: mono, padding: "6px 8px", outline: "none" }} /></td>
+                            <td style={{ padding: "8px 10px", fontSize: 13, fontWeight: 600, fontFamily: mono, color: C.sub, textAlign: "right" }}>{Math.round(d.orders).toLocaleString()}</td>
+                            <td style={{ padding: "8px 10px", fontSize: 13, fontWeight: 600, fontFamily: mono, color: C.blue, textAlign: "right" }}>{fmtF(Math.round(d.revenue))}</td>
+                            <td style={{ padding: "8px 10px", fontSize: 13, fontWeight: 700, fontFamily: mono, color: d.net >= 0 ? C.mint : C.red, textAlign: "right" }}>{fmtF(Math.round(d.net))}</td>
+                            <td style={{ padding: "8px 10px", fontSize: 13, fontWeight: 600, fontFamily: mono, color: d.margin >= 20 ? C.mint : d.margin >= 0 ? C.amber : C.red, textAlign: "right" }}>{fmtP(d.margin)}</td>
+                            <td style={{ padding: "8px 10px", fontSize: 13, fontWeight: 600, fontFamily: mono, color: d.roas >= 2 ? C.mint : d.roas >= 1 ? C.amber : C.red, textAlign: "right" }}>{d.roas.toFixed(2)}x</td>
                             <td>{sc.manualTiers.length > 2 && <span onClick={() => rmManualTier(i)} style={{ color: C.dim, cursor: "pointer", fontSize: 14, padding: "3px 6px" }}>{"\u00D7"}</span>}</td>
                           </tr>
                         );
@@ -742,28 +700,32 @@ export default function App() {
                   </div>
                 </div>
                 <div style={{ overflowX: "auto", maxHeight: 360, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
-                  <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: "0 2px", minWidth: bp.isMobile ? 600 : "auto" }}>
-                    <thead style={{ position: "sticky", top: 0, zIndex: 2 }}><tr>{["#", "Daily Budget", "CPA", "Orders", "Revenue", "Net Profit", "Margin", "ROAS"].map(h => (
-                      <th key={h} style={{ padding: "7px 10px", fontSize: 9, fontWeight: 700, color: C.dim, textTransform: "uppercase", letterSpacing: "0.1em", textAlign: "left", whiteSpace: "nowrap", background: C.bgGradient ? C.bg : C.bg }}>{h}</th>
-                    ))}</tr></thead>
+                  <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: "0 2px", minWidth: bp.isMobile ? 680 : "auto" }}>
+                    <thead style={{ position: "sticky", top: 0, zIndex: 2 }}><tr>
+                      {["#", "Daily Budget", "CPA", "Orders", "Revenue", "Net Profit", "Margin", "ROAS"].map(h => {
+                        const isRight = ["Daily Budget", "CPA", "Orders", "Revenue", "Net Profit"].includes(h);
+                        return <th key={h} style={{ padding: "7px 10px", fontSize: 9, fontWeight: 700, color: C.dim, textTransform: "uppercase", letterSpacing: "0.1em", textAlign: isRight ? "right" : "left", whiteSpace: "nowrap", background: C.bg }}>{h}</th>;
+                      })}
+                    </tr></thead>
                     <tbody>
                       {data.map((d, i) => {
                         const isPk = d.budget === peak.budget && d.net === peak.net;
+                        const mono = "'JetBrains Mono',monospace";
                         return (
                           <tr key={i} className="tier-row" style={{ background: isPk ? C.mintD : "transparent" }}>
-                            <td style={{ padding: "6px 10px", fontSize: 11, color: C.dim, fontFamily: "'JetBrains Mono',monospace" }}>{i + 1}</td>
-                            <td style={{ padding: "6px 10px", fontSize: 13, fontWeight: 600, fontFamily: "'JetBrains Mono',monospace", color: C.text }}>{fmtF(d.budget)}</td>
-                            <td style={{ padding: "6px 10px", fontSize: 13, fontWeight: 600, fontFamily: "'JetBrains Mono',monospace", color: d.cpa > breakevenCpa ? C.red : C.amber }}>${d.cpa.toFixed(2)}</td>
-                            <td style={{ padding: "6px 10px", fontSize: 13, fontWeight: 600, fontFamily: "'JetBrains Mono',monospace", color: C.sub }}>{Math.round(d.orders).toLocaleString()}</td>
-                            <td style={{ padding: "6px 10px", fontSize: 13, fontWeight: 600, fontFamily: "'JetBrains Mono',monospace", color: C.blue }}>{fmtF(Math.round(d.revenue))}</td>
-                            <td style={{ padding: "6px 10px" }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                <span style={{ fontSize: 13, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", color: d.net >= 0 ? C.mint : C.red }}>{fmtF(Math.round(d.net))}</span>
-                                {isPk && <span style={{ fontSize: 7, fontWeight: 800, background: `linear-gradient(135deg, ${C.mint}30, ${C.cyan}20)`, color: C.mint, padding: "2px 6px", borderRadius: 4, textTransform: "uppercase", letterSpacing: "0.06em", border: `1px solid ${C.mint}20` }}>PEAK</span>}
+                            <td style={{ padding: "6px 10px", fontSize: 11, color: C.dim, fontFamily: mono }}>{i + 1}</td>
+                            <td style={{ padding: "6px 10px", fontSize: 13, fontWeight: 600, fontFamily: mono, color: C.text, textAlign: "right" }}>{fmtF(d.budget)}</td>
+                            <td style={{ padding: "6px 10px", fontSize: 13, fontWeight: 600, fontFamily: mono, color: d.cpa > breakevenCpa ? C.red : C.amber, textAlign: "right" }}>{fmtC(d.cpa)}</td>
+                            <td style={{ padding: "6px 10px", fontSize: 13, fontWeight: 600, fontFamily: mono, color: C.sub, textAlign: "right" }}>{Math.round(d.orders).toLocaleString()}</td>
+                            <td style={{ padding: "6px 10px", fontSize: 13, fontWeight: 600, fontFamily: mono, color: C.blue, textAlign: "right" }}>{fmtF(Math.round(d.revenue))}</td>
+                            <td style={{ padding: "6px 10px", textAlign: "right" }}>
+                              <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 6 }}>
+                                {isPk && <span style={{ fontSize: 7, fontWeight: 800, background: `linear-gradient(135deg, ${C.mint}30, ${C.cyan}20)`, color: C.mint, padding: "2px 6px", borderRadius: 4, textTransform: "uppercase", letterSpacing: "0.06em", border: `1px solid ${C.mint}20`, flexShrink: 0 }}>PEAK</span>}
+                                <span style={{ fontSize: 13, fontWeight: 700, fontFamily: mono, color: d.net >= 0 ? C.mint : C.red }}>{fmtF(Math.round(d.net))}</span>
                               </div>
                             </td>
-                            <td style={{ padding: "6px 10px", fontSize: 13, fontWeight: 600, fontFamily: "'JetBrains Mono',monospace", color: d.margin >= 20 ? C.mint : d.margin >= 0 ? C.amber : C.red }}>{fmtP(d.margin)}</td>
-                            <td style={{ padding: "6px 10px", fontSize: 13, fontWeight: 600, fontFamily: "'JetBrains Mono',monospace", color: d.roas >= 2 ? C.mint : d.roas >= 1 ? C.amber : C.red }}>{d.roas.toFixed(2)}x</td>
+                            <td style={{ padding: "6px 10px", fontSize: 13, fontWeight: 600, fontFamily: mono, color: d.margin >= 20 ? C.mint : d.margin >= 0 ? C.amber : C.red, textAlign: "right" }}>{fmtP(d.margin)}</td>
+                            <td style={{ padding: "6px 10px", fontSize: 13, fontWeight: 600, fontFamily: mono, color: d.roas >= 2 ? C.mint : d.roas >= 1 ? C.amber : C.red, textAlign: "right" }}>{d.roas.toFixed(2)}x</td>
                           </tr>
                         );
                       })}
@@ -776,24 +738,62 @@ export default function App() {
         )}
 
         {/* SUMMARY */}
-        <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fit, minmax(${r(180, 160, 140)}px, 1fr))`, gap: 10, marginBottom: 22, animation: "fadeScale 0.5s cubic-bezier(0.2,0,0,1) 0.15s both" }}>
+        <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fit, minmax(${r(180, 160, 140)}px, 1fr))`, gap: 10, marginBottom: 10, animation: "fadeScale 0.5s cubic-bezier(0.2,0,0,1) 0.15s both" }}>
           {!isComparing ? (
             <>
-              <Metric label="Peak Net Profit" value={fmtF(Math.round(peak.net))} sub={`at ${fmt(peak.budget)}/day spend`} color={C.mint} C={C} />
+              <Metric label="Peak Net Profit" value={fmtF(Math.round(peak.net))} sub={`Optimal daily budget: ${fmtF(peak.budget)}`} color={C.mint} C={C} />
               <Metric label="Peak Margin" value={fmtP(peak.margin)} sub={`${fmtF(Math.round(peak.revenue))} rev`} color={C.blue} C={C} />
-              <Metric label="Optimal CPA" value={`$${peak.cpa.toFixed(2)}`} sub={`${Math.round(peak.orders).toLocaleString()} orders`} color={C.amber} C={C} />
+              <Metric label="Optimal CPA" value={fmtC(peak.cpa)} sub={`${Math.round(peak.orders).toLocaleString()} orders`} color={C.amber} C={C} />
               <Metric label="Peak ROAS" value={`${peak.roas.toFixed(2)}x`} color={C.purple} C={C} />
-              {breakeven && <Metric label="Goes Negative" value={fmt(breakeven.budget)} sub={`CPA $${breakeven.cpa.toFixed(2)}`} color={C.red} C={C} />}
+              {breakeven && <Metric label="Goes Negative" value={fmt(breakeven.budget)} sub={`CPA ${fmtC(breakeven.cpa)}`} color={C.red} C={C} />}
             </>
           ) : (
             scenarios.map((s, i) => {
               const sTiers = s.useDecay ? Array.from({ length: s.numSteps }, (_, j) => ({ budget: s.startBudget + s.increment * j, cpa: decayFns[s.decayType](s.startCpa, s.decayRate, j) })) : s.manualTiers;
               const sData = sTiers.map(t => calcTier(t.budget, t.cpa, s.aov, s.expenses));
               const sPeak = sData.reduce((b, d) => d.net > b.net ? d : b, sData[0]);
-              return <Metric key={s.id} label={`${s.name} Peak`} value={fmtF(Math.round(sPeak.net))} sub={`at ${fmt(sPeak.budget)}/day \u00B7 CPA $${sPeak.cpa.toFixed(2)}`} color={SCOL[i % SCOL.length]} C={C} />;
+              return <Metric key={s.id} label={`${s.name} Peak`} value={fmtF(Math.round(sPeak.net))} sub={`at ${fmt(sPeak.budget)}/day \u00B7 CPA ${fmtC(sPeak.cpa)}`} color={SCOL[i % SCOL.length]} C={C} />;
             })
           )}
         </div>
+
+        {/* WEEKLY / MONTHLY / YEARLY PROJECTIONS */}
+        {!isComparing && (
+          <Glass style={{ padding: gp, marginBottom: 22, animation: "fadeScale 0.5s cubic-bezier(0.2,0,0,1) 0.2s both" }} C={C}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: C.sub, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 14 }}>{"\u{1F4C5}"}</span> Projected at Optimal Daily Budget ({fmtF(peak.budget)}/day)
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: r("repeat(3, 1fr)", "repeat(3, 1fr)", "1fr"), gap: 12 }}>
+              {[
+                { label: "Weekly", mult: 7 },
+                { label: "Monthly", mult: 30 },
+                { label: "Yearly", mult: 365 },
+              ].map(p => (
+                <div key={p.label} style={{ padding: r("16px 18px", "14px 16px", "14px 16px"), background: C.card, border: `1px solid ${C.border}`, borderRadius: 14 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: C.dim, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>{p.label}</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    <div>
+                      <div style={{ fontSize: 9, color: C.dim, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 3 }}>Ad Spend</div>
+                      <div style={{ fontSize: r(16, 15, 14), fontWeight: 700, color: C.text, fontFamily: "'JetBrains Mono', monospace" }}>{fmtF(Math.round(peak.budget * p.mult))}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 9, color: C.dim, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 3 }}>Net Profit</div>
+                      <div style={{ fontSize: r(16, 15, 14), fontWeight: 700, color: peak.net >= 0 ? C.mint : C.red, fontFamily: "'JetBrains Mono', monospace" }}>{fmtF(Math.round(peak.net * p.mult))}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 9, color: C.dim, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 3 }}>Revenue</div>
+                      <div style={{ fontSize: r(14, 13, 12), fontWeight: 600, color: C.blue, fontFamily: "'JetBrains Mono', monospace" }}>{fmtF(Math.round(peak.revenue * p.mult))}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 9, color: C.dim, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 3 }}>Orders</div>
+                      <div style={{ fontSize: r(14, 13, 12), fontWeight: 600, color: C.sub, fontFamily: "'JetBrains Mono', monospace" }}>{Math.round(peak.orders * p.mult).toLocaleString()}</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Glass>
+        )}
 
         {/* TAB NAV */}
         <div style={{ display: "flex", gap: 6, marginBottom: 18, flexWrap: "wrap" }}>
