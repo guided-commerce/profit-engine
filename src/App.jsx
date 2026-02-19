@@ -30,6 +30,7 @@ const THEMES = {
     noiseOpacity: 0.015, tierHover: "rgba(255,255,255,0.025)",
     insetHighlight: "rgba(255,255,255,0.06)", insetShadow: "rgba(0,0,0,0.15)",
     glowMint: "rgba(110,231,183,0.06)",
+    optimalBg: "rgba(110,231,183,0.06)", optimalBorder: "rgba(110,231,183,0.2)",
   },
   light: {
     bg: "#f0f1f5", bgGradient: null,
@@ -55,6 +56,7 @@ const THEMES = {
     noiseOpacity: 0.02, tierHover: "rgba(0,0,0,0.025)",
     insetHighlight: "rgba(255,255,255,0.7)", insetShadow: "rgba(0,0,0,0.04)",
     glowMint: "rgba(5,150,105,0.06)",
+    optimalBg: "rgba(5,150,105,0.06)", optimalBorder: "rgba(5,150,105,0.2)",
   },
 };
 
@@ -82,27 +84,41 @@ const fmtP = n => `${n.toFixed(1)}%`;
 
 /* ─── decay ─── */
 const decayFns = {
-  linear: (b, r, s) => b * (1 + r * s),
+  linear: (b, r, s) => b + r * s,
   exponential: (b, r, s) => b * Math.pow(1 + r, s),
   logarithmic: (b, r, s) => b * (1 + r * Math.log(s + 1)),
 };
 const DECAY_INFO = {
-  linear: { label: "Linear", desc: "CPA rises at a constant rate per step. Predictable, steady increase.", icon: "\u27CB" },
-  exponential: { label: "Exponential", desc: "CPA accelerates faster at higher budgets. Most realistic for Facebook.", icon: "\u2934" },
+  linear: { label: "Linear", desc: "CPA increases by a fixed dollar amount per step. Predictable, steady increase.", icon: "\u27CB" },
+  exponential: { label: "Exponential", desc: "CPA accelerates faster at higher budgets. Compounding growth per step.", icon: "\u2934" },
   logarithmic: { label: "Logarithmic", desc: "CPA rises quickly at first, then levels off. Optimistic scaling model.", icon: "\u2312" },
 };
 
 /* ─── scenario ─── */
 const mkScenario = (id, name) => ({
-  id, name, aov: 49.95, expenses: 12,
-  useDecay: true, startBudget: 5000, increment: 5000, numSteps: 12,
-  startCpa: 15, decayRate: 0.12, decayType: "exponential",
+  id, name, aov: 160, expenses: 20,
+  useDecay: true, startBudget: 10000, increment: 1000, numSteps: 20,
+  startCpa: 15, decayRate: 2, decayType: "linear",
   manualTiers: [
     { budget: 10000, cpa: 18 }, { budget: 15000, cpa: 22 },
     { budget: 20000, cpa: 28 }, { budget: 25000, cpa: 36 }, { budget: 30000, cpa: 48 },
   ],
-  ltvEnabled: false, churnRate: 8, avgLifetimeMonths: 8, reorderRate: 65,
 });
+
+/* ─── localStorage persistence ─── */
+const STORAGE_KEY = "pe-state";
+const loadState = () => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.scenarios && parsed.scenarios.length > 0) return parsed;
+  } catch {}
+  return null;
+};
+const saveState = (state) => {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch {}
+};
 
 /* ─── calc ─── */
 const calcTier = (budget, cpa, aov, expenses) => {
@@ -114,23 +130,30 @@ const calcTier = (budget, cpa, aov, expenses) => {
   const roas = budget > 0 ? revenue / budget : 0;
   return { budget, cpa, orders, revenue, totalCost, net, margin, roas };
 };
-const calcLtv = (tier, aov, expenses, churn, lifeMo, reorderPct) => {
-  const ltv = aov * (reorderPct / 100) * lifeMo;
-  const lifetimeExpenses = expenses * (reorderPct / 100) * lifeMo;
-  const lifetimeProfit = ltv - lifetimeExpenses - tier.cpa;
-  const monthlyNet = aov * (reorderPct / 100) - expenses * (reorderPct / 100);
-  const paybackMonths = monthlyNet > 0 ? tier.cpa / monthlyNet : Infinity;
-  return { ltv, lifetimeExpenses, lifetimeProfit, paybackMonths, monthlyNet };
-};
 
 /* ─── Mini CPA Decay Chart SVG ─── */
-const MiniDecayChart = ({ type, active, rate = 0.12, C }) => {
-  const pts = Array.from({ length: 8 }, (_, i) => decayFns[type](1, rate, i));
+const MiniDecayChart = ({ type, active, C }) => {
+  // Use distinct representative params per type so each curve shape is clearly different
+  const pts = (() => {
+    const n = 12;
+    if (type === "linear") {
+      // Straight line: y = 1 + 0.08 * i
+      return Array.from({ length: n }, (_, i) => 1 + 0.08 * i);
+    }
+    if (type === "exponential") {
+      // Exponential: y = 1 * (1.12)^i
+      return Array.from({ length: n }, (_, i) => Math.pow(1.12, i));
+    }
+    // Logarithmic: y = 1 + 0.5 * ln(i+1)
+    return Array.from({ length: n }, (_, i) => 1 + 0.5 * Math.log(i + 1));
+  })();
+  const minV = Math.min(...pts);
   const maxV = Math.max(...pts);
+  const range = maxV - minV || 1;
   const h = 32, w = 56;
   const path = pts.map((v, i) => {
     const x = (i / (pts.length - 1)) * w;
-    const y = h - (v / maxV) * h * 0.85;
+    const y = h - ((v - minV) / range) * h * 0.85 - h * 0.05;
     return `${i === 0 ? "M" : "L"}${x},${y}`;
   }).join(" ");
   const col = active ? C.cyan : C.dim;
@@ -231,6 +254,7 @@ const NumInput = ({ label, value, onChange, prefix = "$", step = 1, min = 0, col
     fontFamily: "'JetBrains Mono', monospace", lineHeight: 1,
     padding: 0, outline: "none",
   });
+  const showPrefix = prefix !== undefined && prefix !== null && prefix !== "";
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       {label && (
@@ -244,14 +268,14 @@ const NumInput = ({ label, value, onChange, prefix = "$", step = 1, min = 0, col
           style={btnStyle("left", hovL)}
         >&minus;</button>
         <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
-          {prefix && <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: C.dim, fontSize: 13, fontWeight: 600, pointerEvents: "none", zIndex: 2 }}>{prefix}</span>}
+          {showPrefix && <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: C.dim, fontSize: 13, fontWeight: 600, pointerEvents: "none", zIndex: 2 }}>{prefix}</span>}
           <input
             type="text" inputMode="decimal" value={value}
             onChange={e => { const v = parseFloat(e.target.value); if (!isNaN(v)) onChange(v); }}
             onBlur={e => { setFocused(false); const v = parseFloat(e.target.value); if (isNaN(v)) onChange(min); }}
             onFocus={() => setFocused(true)}
             style={{
-              width: "100%", height: "100%", padding: `12px 14px 12px ${prefix ? 28 : 14}px`,
+              width: "100%", height: "100%", padding: `12px 14px 12px ${showPrefix ? 28 : 14}px`,
               background: focused ? C.inputFocusBg : C.inputBg,
               border: `1px solid ${focused ? C.mint : C.border}`,
               borderRadius: 0, borderLeft: "none", borderRight: "none",
@@ -338,6 +362,52 @@ const ThemeSelector = ({ theme, setTheme, C, isMobile }) => (
   </div>
 );
 
+/* ─── Optimal Budget Banner ─── */
+const OptimalBanner = ({ peak, C, r: rFn, isMobile }) => (
+  <div style={{
+    background: `linear-gradient(135deg, ${C.optimalBg}, ${C.mint}04)`,
+    border: `1px solid ${C.optimalBorder}`,
+    borderRadius: 16, padding: rFn ? rFn("16px 24px", "14px 20px", "14px 16px") : "16px 24px",
+    display: "flex", alignItems: isMobile ? "flex-start" : "center",
+    flexDirection: isMobile ? "column" : "row",
+    gap: isMobile ? 10 : 20,
+    marginBottom: 16,
+    backdropFilter: "blur(20px)",
+    boxShadow: `0 0 40px ${C.mint}08`,
+    animation: "fadeScale 0.5s cubic-bezier(0.2,0,0,1) both",
+  }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+      <div style={{
+        width: 40, height: 40, borderRadius: 12,
+        background: `linear-gradient(135deg, ${C.mint}20, ${C.cyan}15)`,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        border: `1px solid ${C.mint}25`,
+        boxShadow: `0 0 20px ${C.mint}10`,
+      }}>
+        <span style={{ fontSize: 20 }}>{"\u2728"}</span>
+      </div>
+      <div>
+        <div style={{ fontSize: 10, fontWeight: 700, color: C.mint, textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 2 }}>Optimal Daily Budget</div>
+        <div style={{ fontSize: 28, fontWeight: 800, color: C.mint, fontFamily: "'JetBrains Mono', monospace", letterSpacing: "-0.02em", lineHeight: 1 }}>{fmtF(peak.budget)}<span style={{ fontSize: 14, fontWeight: 500, color: C.sub, marginLeft: 4 }}>/day</span></div>
+      </div>
+    </div>
+    <div style={{ display: "flex", gap: isMobile ? 16 : 24, flexWrap: "wrap" }}>
+      <div>
+        <div style={{ fontSize: 9, fontWeight: 600, color: C.dim, textTransform: "uppercase", letterSpacing: "0.1em" }}>Peak Profit</div>
+        <div style={{ fontSize: 18, fontWeight: 700, color: C.text, fontFamily: "'JetBrains Mono', monospace" }}>{fmtF(Math.round(peak.net))}</div>
+      </div>
+      <div>
+        <div style={{ fontSize: 9, fontWeight: 600, color: C.dim, textTransform: "uppercase", letterSpacing: "0.1em" }}>CPA at Peak</div>
+        <div style={{ fontSize: 18, fontWeight: 700, color: C.amber, fontFamily: "'JetBrains Mono', monospace" }}>${peak.cpa.toFixed(2)}</div>
+      </div>
+      <div>
+        <div style={{ fontSize: 9, fontWeight: 600, color: C.dim, textTransform: "uppercase", letterSpacing: "0.1em" }}>ROAS</div>
+        <div style={{ fontSize: 18, fontWeight: 700, color: C.blue, fontFamily: "'JetBrains Mono', monospace" }}>{peak.roas.toFixed(2)}x</div>
+      </div>
+    </div>
+  </div>
+);
+
 /* ══════════════════════════ MAIN ══════════════════════════ */
 export default function App() {
   const [theme, setTheme] = useState(() => {
@@ -355,14 +425,21 @@ export default function App() {
   useEffect(() => { document.body.style.background = C.bg; document.body.style.transition = "background 0.5s ease"; }, [C.bg]);
   useEffect(() => { try { localStorage.setItem("pe-theme", theme); } catch {} }, [theme]);
 
-  const [scenarios, setScenarios] = useState([mkScenario(1, "Base Case")]);
-  const [activeId, setActiveId] = useState(1);
-  const [showCompare, setShowCompare] = useState(false);
-  const [sensiAxis, setSensiAxis] = useState("cpa");
-  const [sensiRange, setSensiRange] = useState(30);
-  const [activeTab, setActiveTab] = useState("profit");
+  // Load full state from localStorage
+  const savedState = useMemo(() => loadState(), []);
+  const [scenarios, setScenarios] = useState(() => savedState?.scenarios || [mkScenario(1, "Base Case")]);
+  const [activeId, setActiveId] = useState(() => savedState?.activeId || 1);
+  const [showCompare, setShowCompare] = useState(() => savedState?.showCompare || false);
+  const [sensiAxis, setSensiAxis] = useState(() => savedState?.sensiAxis || "cpa");
+  const [sensiRange, setSensiRange] = useState(() => savedState?.sensiRange || 30);
+  const [activeTab, setActiveTab] = useState(() => savedState?.activeTab || "profit");
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setTimeout(() => setMounted(true), 50); }, []);
+
+  // Save full state to localStorage whenever it changes
+  useEffect(() => {
+    saveState({ scenarios, activeId, showCompare, sensiAxis, sensiRange, activeTab });
+  }, [scenarios, activeId, showCompare, sensiAxis, sensiRange, activeTab]);
 
   const sc = scenarios.find(s => s.id === activeId) || scenarios[0];
   const upSc = useCallback((f, v) => setScenarios(p => p.map(s => s.id === activeId ? { ...s, [f]: v } : s)), [activeId]);
@@ -383,25 +460,6 @@ export default function App() {
   const peak = useMemo(() => data.reduce((b, d) => d.net > b.net ? d : b, data[0]), [data]);
   const breakeven = useMemo(() => data.find(d => d.net < 0), [data]);
   const breakevenCpa = useMemo(() => sc.aov - sc.expenses, [sc.aov, sc.expenses]);
-
-  const ltvData = useMemo(() => {
-    if (!sc.ltvEnabled) return [];
-    return data.map(d => {
-      const l = calcLtv(d, sc.aov, sc.expenses, sc.churnRate, sc.avgLifetimeMonths, sc.reorderRate);
-      return { ...d, ...l, label: fmt(d.budget), firstOrderProfit: Math.round(d.net), lifetimeTotalProfit: Math.round(l.lifetimeProfit * d.orders) };
-    });
-  }, [data, sc]);
-
-  const cashFlowData = useMemo(() => {
-    if (!sc.ltvEnabled) return [];
-    let cum = -peak.cpa;
-    const months = [];
-    for (let m = 0; m <= Math.min(Math.ceil(sc.avgLifetimeMonths * 1.5), 24); m++) {
-      if (m === 0) { const fn = sc.aov - sc.expenses; cum = -peak.cpa + fn; months.push({ month: `M${m}`, cumProfit: Math.round(cum), monthly: Math.round(fn - peak.cpa) }); }
-      else { const ret = Math.pow(1 - sc.churnRate / 100, m); const mn = sc.aov * (sc.reorderRate / 100) * ret - sc.expenses * (sc.reorderRate / 100) * ret; cum += mn; months.push({ month: `M${m}`, cumProfit: Math.round(cum), monthly: Math.round(mn) }); }
-    }
-    return months;
-  }, [data, sc, peak]);
 
   const sensiData = useMemo(() => {
     const steps = 13;
@@ -433,6 +491,21 @@ export default function App() {
   const rmManualTier = i => { if (sc.manualTiers.length <= 2) return; upSc("manualTiers", sc.manualTiers.filter((_, j) => j !== i)); };
   const chartD = data.map(d => ({ ...d, label: fmt(d.budget), netProfit: Math.round(d.net) }));
   const isComparing = showCompare && scenarios.length > 1;
+
+  // Decay rate label/info helpers
+  const decayRateLabel = sc.decayType === "linear" ? "CPA Increase / Step" : "Decay Rate";
+  const decayRatePrefix = sc.decayType === "linear" ? "$" : "";
+  const decayRateStep = sc.decayType === "linear" ? 0.5 : 0.01;
+  const decayRateInfo = sc.decayType === "linear"
+    ? "Dollar amount CPA increases per budget step. e.g. $2 means CPA goes from $15 to $17, $19, $21, etc."
+    : sc.decayType === "exponential"
+      ? "The rate at which CPA compounds per step. 0.12 means CPA grows ~12% per budget increment."
+      : "Logarithmic scaling factor. Higher = steeper initial CPA rise that flattens over time.";
+
+  // Auto tiers header label
+  const tiersHeaderLabel = sc.decayType === "linear"
+    ? `${tiers.length} Steps \u00B7 ${DECAY_INFO[sc.decayType].label} +$${sc.decayRate}/step`
+    : `${tiers.length} Steps \u00B7 ${DECAY_INFO[sc.decayType].label} Decay @ ${(sc.decayRate * 100).toFixed(0)}%`;
 
   const gp = r(24, 20, 16); /* glass padding */
   const gpL = r(28, 22, 18); /* glass padding large */
@@ -500,7 +573,7 @@ export default function App() {
             {"Profit "}<span style={{ backgroundImage: `linear-gradient(135deg, ${C.mint}, ${C.cyan})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", color: "transparent" }}>Curve</span>
           </h1>
           <p style={{ fontSize: r(14, 13, 12), color: C.sub, marginTop: 8, maxWidth: 640, lineHeight: 1.6 }}>
-            Model diminishing returns with auto-scaling CPA decay, simulate LTV payback curves, and stress-test your unit economics before you scale.
+            Model diminishing returns with auto-scaling CPA decay and stress-test your unit economics before you scale.
           </p>
         </div>
 
@@ -526,7 +599,7 @@ export default function App() {
                 </div>
                 <input type="text" value={s.name}
                   onChange={e => setScenarios(p => p.map(x => x.id === s.id ? { ...x, name: e.target.value } : x))}
-                  style={{ background: "transparent", border: "none", color: isActive ? col : C.sub, fontSize: 12, fontWeight: 600, padding: "10px 6px 10px 10px", width: Math.max(72, s.name.length * 8), outline: "none", fontFamily: "'DM Sans', sans-serif", cursor: "text" }}
+                  style={{ background: "transparent", border: "none", color: isActive ? col : C.sub, fontSize: 12, fontWeight: 600, padding: "10px 6px 10px 10px", width: Math.max(90, s.name.length * 9 + 12), outline: "none", fontFamily: "'DM Sans', sans-serif", cursor: "text" }}
                 />
                 <div style={{ display: "flex", alignItems: "center", paddingRight: 8, gap: 2 }}>
                   <span onClick={e => { e.stopPropagation(); dupScenario(s); }} title="Duplicate"
@@ -558,6 +631,9 @@ export default function App() {
           )}
         </div>
 
+        {/* ─── OPTIMAL BUDGET BANNER (always visible) ─── */}
+        {!isComparing && <OptimalBanner peak={peak} C={C} r={r} isMobile={bp.isMobile} />}
+
         {/* ─── INPUTS (hidden in compare mode) ─── */}
         {!isComparing && (
           <>
@@ -588,14 +664,14 @@ export default function App() {
                 {sc.useDecay ? (
                   <>
                     <div style={{ display: "grid", gridTemplateColumns: r("1fr 1fr 1fr", "1fr 1fr 1fr", "1fr"), gap: 12, marginBottom: 14 }}>
-                      <NumInput label="Starting Budget" value={sc.startBudget} onChange={v => upSc("startBudget", v)} step={1000} C={C} />
+                      <NumInput label="Starting Daily Budget" value={sc.startBudget} onChange={v => upSc("startBudget", v)} step={1000} C={C} />
                       <NumInput label="Increment" value={sc.increment} onChange={v => upSc("increment", v)} step={500} C={C} />
                       <NumInput label="# of Steps" value={sc.numSteps} onChange={v => upSc("numSteps", Math.max(2, Math.min(30, Math.round(v))))} prefix="" step={1} C={C} />
                     </div>
                     <div style={{ display: "grid", gridTemplateColumns: r("1fr 1fr", "1fr 1fr", "1fr"), gap: 12, marginBottom: 16 }}>
                       <NumInput label="Starting CPA" value={sc.startCpa} onChange={v => upSc("startCpa", v)} step={0.5} C={C} />
-                      <NumInput label="Decay Rate" value={sc.decayRate} onChange={v => upSc("decayRate", v)} prefix="" step={0.01} C={C}
-                        info="The rate at which CPA degrades per step. For exponential: 0.12 means CPA grows ~12% compounding per budget increment. Higher = faster degradation." />
+                      <NumInput label={decayRateLabel} value={sc.decayRate} onChange={v => upSc("decayRate", v)} prefix={decayRatePrefix} step={decayRateStep} C={C}
+                        info={decayRateInfo} />
                     </div>
                     <div style={{ display: "grid", gridTemplateColumns: r("1fr 1fr 1fr", "1fr 1fr 1fr", "1fr"), gap: 8 }}>
                       {Object.entries(DECAY_INFO).map(([key, info]) => {
@@ -607,7 +683,7 @@ export default function App() {
                             border: `1px solid ${active ? C.cyan + "35" : C.border}`,
                             boxShadow: active ? `0 0 20px ${C.cyanD}, 0 1px 0 ${C.insetHighlight} inset` : `0 1px 0 ${C.insetHighlight} inset`,
                           }}>
-                            <MiniDecayChart type={key} active={active} rate={sc.decayRate} C={C} />
+                            <MiniDecayChart type={key} active={active} C={C} />
                             <div style={{ fontSize: 11, fontWeight: 700, color: active ? C.cyan : C.sub, marginTop: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>{info.label}</div>
                             <div style={{ fontSize: 10, color: C.dim, marginTop: 3, lineHeight: 1.4 }}>{info.desc}</div>
                           </div>
@@ -621,23 +697,6 @@ export default function App() {
               </Glass>
             </div>
 
-            {/* LTV */}
-            <Glass style={{ padding: gp, marginBottom: 16, animation: "fadeScale 0.5s cubic-bezier(0.2,0,0,1) 0.05s both" }} C={C}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: C.sub, textTransform: "uppercase", letterSpacing: "0.1em", display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 14 }}>{"\u221E"}</span> Subscription / LTV Model
-                </div>
-                <Toggle value={sc.ltvEnabled} onChange={v => upSc("ltvEnabled", v)} label={sc.ltvEnabled ? "Enabled" : "Disabled"} color={C.purple} C={C} />
-              </div>
-              {sc.ltvEnabled && (
-                <div style={{ display: "grid", gridTemplateColumns: r("repeat(3, 1fr)", "repeat(3, 1fr)", "1fr"), gap: 14, marginTop: 18 }}>
-                  <NumInput label="Monthly Churn Rate %" value={sc.churnRate} onChange={v => upSc("churnRate", v)} prefix="%" step={0.5} C={C} />
-                  <NumInput label="Avg Lifetime (months)" value={sc.avgLifetimeMonths} onChange={v => upSc("avgLifetimeMonths", v)} prefix="" step={1} C={C} />
-                  <NumInput label="Reorder Rate %" value={sc.reorderRate} onChange={v => upSc("reorderRate", v)} prefix="%" step={1} C={C} />
-                </div>
-              )}
-            </Glass>
-
             {/* MANUAL TIERS */}
             {!sc.useDecay && (
               <Glass style={{ padding: gp, marginBottom: 16 }} C={C}>
@@ -649,7 +708,7 @@ export default function App() {
                 </div>
                 <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
                   <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: "0 3px", minWidth: bp.isMobile ? 600 : "auto" }}>
-                    <thead><tr>{["Budget", "CPA", "Orders", "Revenue", "Net Profit", "Margin", "ROAS", ""].map(h => (
+                    <thead><tr>{["Daily Budget", "CPA", "Orders", "Revenue", "Net Profit", "Margin", "ROAS", ""].map(h => (
                       <th key={h} style={{ padding: "6px 10px", fontSize: 9, fontWeight: 700, color: C.dim, textTransform: "uppercase", letterSpacing: "0.1em", textAlign: "left", whiteSpace: "nowrap" }}>{h}</th>
                     ))}</tr></thead>
                     <tbody>
@@ -679,12 +738,12 @@ export default function App() {
               <Glass style={{ padding: gp, marginBottom: 16, animation: "fadeScale 0.5s cubic-bezier(0.2,0,0,1) 0.1s both" }} C={C}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 6 }}>
                   <div style={{ fontSize: 11, fontWeight: 600, color: C.sub, textTransform: "uppercase", letterSpacing: "0.1em", display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 14 }}>{"\u25A4"}</span> {tiers.length} Steps {"\u00B7"} {DECAY_INFO[sc.decayType].label} Decay @ {(sc.decayRate * 100).toFixed(0)}%
+                    <span style={{ fontSize: 14 }}>{"\u25A4"}</span> {tiersHeaderLabel}
                   </div>
                 </div>
                 <div style={{ overflowX: "auto", maxHeight: 360, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
                   <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: "0 2px", minWidth: bp.isMobile ? 600 : "auto" }}>
-                    <thead style={{ position: "sticky", top: 0, zIndex: 2 }}><tr>{["#", "Budget", "CPA", "Orders", "Revenue", "Net Profit", "Margin", "ROAS"].map(h => (
+                    <thead style={{ position: "sticky", top: 0, zIndex: 2 }}><tr>{["#", "Daily Budget", "CPA", "Orders", "Revenue", "Net Profit", "Margin", "ROAS"].map(h => (
                       <th key={h} style={{ padding: "7px 10px", fontSize: 9, fontWeight: 700, color: C.dim, textTransform: "uppercase", letterSpacing: "0.1em", textAlign: "left", whiteSpace: "nowrap", background: C.bgGradient ? C.bg : C.bg }}>{h}</th>
                     ))}</tr></thead>
                     <tbody>
@@ -720,7 +779,7 @@ export default function App() {
         <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fit, minmax(${r(180, 160, 140)}px, 1fr))`, gap: 10, marginBottom: 22, animation: "fadeScale 0.5s cubic-bezier(0.2,0,0,1) 0.15s both" }}>
           {!isComparing ? (
             <>
-              <Metric label="Peak Net Profit" value={fmtF(Math.round(peak.net))} sub={`at ${fmt(peak.budget)} spend`} color={C.mint} C={C} />
+              <Metric label="Peak Net Profit" value={fmtF(Math.round(peak.net))} sub={`at ${fmt(peak.budget)}/day spend`} color={C.mint} C={C} />
               <Metric label="Peak Margin" value={fmtP(peak.margin)} sub={`${fmtF(Math.round(peak.revenue))} rev`} color={C.blue} C={C} />
               <Metric label="Optimal CPA" value={`$${peak.cpa.toFixed(2)}`} sub={`${Math.round(peak.orders).toLocaleString()} orders`} color={C.amber} C={C} />
               <Metric label="Peak ROAS" value={`${peak.roas.toFixed(2)}x`} color={C.purple} C={C} />
@@ -731,7 +790,7 @@ export default function App() {
               const sTiers = s.useDecay ? Array.from({ length: s.numSteps }, (_, j) => ({ budget: s.startBudget + s.increment * j, cpa: decayFns[s.decayType](s.startCpa, s.decayRate, j) })) : s.manualTiers;
               const sData = sTiers.map(t => calcTier(t.budget, t.cpa, s.aov, s.expenses));
               const sPeak = sData.reduce((b, d) => d.net > b.net ? d : b, sData[0]);
-              return <Metric key={s.id} label={`${s.name} Peak`} value={fmtF(Math.round(sPeak.net))} sub={`at ${fmt(sPeak.budget)} \u00B7 CPA $${sPeak.cpa.toFixed(2)}`} color={SCOL[i % SCOL.length]} C={C} />;
+              return <Metric key={s.id} label={`${s.name} Peak`} value={fmtF(Math.round(sPeak.net))} sub={`at ${fmt(sPeak.budget)}/day \u00B7 CPA $${sPeak.cpa.toFixed(2)}`} color={SCOL[i % SCOL.length]} C={C} />;
             })
           )}
         </div>
@@ -740,7 +799,6 @@ export default function App() {
         <div style={{ display: "flex", gap: 6, marginBottom: 18, flexWrap: "wrap" }}>
           {[
             { key: "profit", label: bp.isMobile ? "Profit" : "Profit Curve", icon: "\u25C6" },
-            ...(!isComparing && sc.ltvEnabled ? [{ key: "ltv", label: bp.isMobile ? "LTV" : "LTV & Cash Flow", icon: "\u221E" }] : []),
             ...(!isComparing ? [{ key: "sensitivity", label: bp.isMobile ? "Sensitivity" : "Sensitivity", icon: "\u25CE" }] : []),
           ].map(t => (
             <button key={t.key} className="btn" onClick={() => setActiveTab(t.key)} style={{
@@ -761,7 +819,7 @@ export default function App() {
                 <div style={{ fontSize: 11, fontWeight: 600, color: C.sub, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4, display: "flex", alignItems: "center", gap: 8 }}>
                   <span style={{ fontSize: 14 }}>{"\u25C6"}</span> {isComparing ? "Scenario Comparison" : "Profit Curve"}
                 </div>
-                <div style={{ fontSize: r(20, 18, 16), fontWeight: 700, color: C.text }}>{isComparing ? "Net Profit \u2014 All Scenarios Overlaid" : "Net Profit vs. Ad Spend"}</div>
+                <div style={{ fontSize: r(20, 18, 16), fontWeight: 700, color: C.text }}>{isComparing ? "Net Profit \u2014 All Scenarios Overlaid" : "Net Profit vs. Daily Ad Spend"}</div>
               </div>
               <ResponsiveContainer width="100%" height={chartH1}>
                 {isComparing ? (
@@ -781,7 +839,7 @@ export default function App() {
                     <XAxis dataKey="label" tick={{ fontSize: 11, fill: C.sub }} axisLine={{ stroke: C.border }} tickLine={false} />
                     <YAxis tick={{ fontSize: 11, fill: C.sub }} axisLine={{ stroke: C.border }} tickLine={false} tickFormatter={v => fmt(v)} />
                     <Tooltip content={<ChartTip C={C} />} />
-                    <ReferenceLine y={0} stroke={C.red} strokeDasharray="4 4" strokeOpacity={0.4} label={{ value: "Break-Even", fill: C.red, fontSize: 10, position: "insideTopLeft" }} />
+                    <ReferenceLine y={0} stroke={C.red} strokeDasharray="4 4" strokeOpacity={0.4} />
                     <Area type="monotone" dataKey="netProfit" name="Net Profit" stroke={C.mint} strokeWidth={2.5} fill="url(#pg)"
                       dot={p => {
                         const { cx, cy, payload } = p; const isPk = payload.budget === peak.budget && payload.net === peak.net;
@@ -818,71 +876,12 @@ export default function App() {
           </>
         )}
 
-        {/* ═══ LTV ═══ */}
-        {activeTab === "ltv" && sc.ltvEnabled && !isComparing && (
-          <>
-            {(() => {
-              const l = calcLtv(peak, sc.aov, sc.expenses, sc.churnRate, sc.avgLifetimeMonths, sc.reorderRate);
-              return (
-                <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fit, minmax(${r(180, 160, 140)}px, 1fr))`, gap: 10, marginBottom: 16 }}>
-                  <Metric label="Customer LTV" value={`$${l.ltv.toFixed(2)}`} sub={`over ${sc.avgLifetimeMonths} mo`} color={C.purple} C={C} />
-                  <Metric label="LTV Profit / Customer" value={`$${l.lifetimeProfit.toFixed(2)}`} sub="after CPA + expenses" color={C.mint} C={C} />
-                  <Metric label="Payback Period" value={l.paybackMonths === Infinity ? "Never" : `${l.paybackMonths.toFixed(1)} mo`} sub="to recoup CPA" color={l.paybackMonths <= 3 ? C.mint : l.paybackMonths <= 6 ? C.amber : C.red} C={C} />
-                  <Metric label="LTV : CPA Ratio" value={`${(l.ltv / peak.cpa).toFixed(1)}x`} sub={`$${l.ltv.toFixed(0)} / $${peak.cpa.toFixed(0)}`} color={C.cyan} C={C} />
-                </div>
-              );
-            })()}
-            <Glass style={{ padding: gpL, marginBottom: 16 }} glow C={C}>
-              <div style={{ marginBottom: 22 }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: C.sub, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4, display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 14 }}>{"\u221E"}</span> LTV Impact</div>
-                <div style={{ fontSize: r(20, 18, 16), fontWeight: 700, color: C.text }}>First-Order vs. Lifetime Profit by Budget</div>
-              </div>
-              <ResponsiveContainer width="100%" height={chartH3}>
-                <ComposedChart data={ltvData.map(d => ({ label: d.label, "First-Order": d.firstOrderProfit, "Lifetime": d.lifetimeTotalProfit }))} margin={{ top: 10, right: r(30, 20, 10), left: r(20, 10, 0), bottom: 10 }}>
-                  <defs><linearGradient id="lg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={C.purple} stopOpacity={0.2} /><stop offset="100%" stopColor={C.purple} stopOpacity={0} /></linearGradient></defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke={C.gridLine} />
-                  <XAxis dataKey="label" tick={{ fontSize: 11, fill: C.sub }} axisLine={{ stroke: C.border }} tickLine={false} />
-                  <YAxis tick={{ fontSize: 11, fill: C.sub }} axisLine={{ stroke: C.border }} tickLine={false} tickFormatter={v => fmt(v)} />
-                  <Tooltip content={<ChartTip C={C} />} /><Legend formatter={v => <span style={{ color: C.sub, fontSize: 11 }}>{v}</span>} />
-                  <ReferenceLine y={0} stroke={C.red} strokeDasharray="4 4" strokeOpacity={0.4} />
-                  <Area type="monotone" dataKey="Lifetime" stroke={C.purple} strokeWidth={2.5} fill="url(#lg)" dot={{ fill: C.purple, r: 4 }} activeDot={{ r: 6, stroke: C.text, strokeWidth: 2 }} />
-                  <Line type="monotone" dataKey="First-Order" stroke={C.mint} strokeWidth={2.5} strokeDasharray="6 3" dot={{ fill: C.mint, r: 4 }} activeDot={{ r: 6, stroke: C.text, strokeWidth: 2 }} />
-                </ComposedChart>
-              </ResponsiveContainer>
-              <div style={{ marginTop: 14, fontSize: 12, color: C.sub, padding: "12px 16px", background: `linear-gradient(135deg, ${C.purpleD}, transparent)`, borderRadius: 12, border: `1px solid ${C.purple}15`, lineHeight: 1.6 }}>
-                The gap between the dashed line (first-order) and filled area (lifetime) is hidden profit from retention. Budget levels that look unprofitable on day one may be wildly profitable over the customer lifecycle.
-              </div>
-            </Glass>
-            <Glass style={{ padding: gpL }} C={C}>
-              <div style={{ marginBottom: 22 }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: C.sub, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4, display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 14 }}>{"\u25E7"}</span> Cash Flow Timeline</div>
-                <div style={{ fontSize: r(20, 18, 16), fontWeight: 700, color: C.text }}>Cumulative Per-Customer Profit (at peak CPA ${peak.cpa.toFixed(2)})</div>
-              </div>
-              <ResponsiveContainer width="100%" height={chartH2}>
-                <ComposedChart data={cashFlowData} margin={{ top: 10, right: r(30, 20, 10), left: r(20, 10, 0), bottom: 10 }}>
-                  <defs><linearGradient id="cf" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={C.cyan} stopOpacity={0.18} /><stop offset="100%" stopColor={C.cyan} stopOpacity={0} /></linearGradient></defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke={C.gridLine} />
-                  <XAxis dataKey="month" tick={{ fontSize: 11, fill: C.sub }} axisLine={{ stroke: C.border }} tickLine={false} />
-                  <YAxis tick={{ fontSize: 11, fill: C.sub }} axisLine={{ stroke: C.border }} tickLine={false} tickFormatter={v => `$${v}`} />
-                  <Tooltip content={<ChartTip C={C} />} /><Legend formatter={v => <span style={{ color: C.sub, fontSize: 11 }}>{v}</span>} />
-                  <ReferenceLine y={0} stroke={C.red} strokeDasharray="4 4" strokeOpacity={0.4} label={{ value: "Break-Even", fill: C.red, fontSize: 10, position: "insideTopLeft" }} />
-                  <Area type="monotone" dataKey="cumProfit" name="Cumulative Profit" stroke={C.cyan} strokeWidth={2.5} fill="url(#cf)" dot={{ fill: C.cyan, r: 3 }} activeDot={{ r: 6, stroke: C.text, strokeWidth: 2 }} />
-                  <Bar dataKey="monthly" name="Monthly Net" fill={C.mint} fillOpacity={0.25} radius={[4, 4, 0, 0]} />
-                </ComposedChart>
-              </ResponsiveContainer>
-              <div style={{ marginTop: 14, fontSize: 12, color: C.sub, padding: "12px 16px", background: `linear-gradient(135deg, ${C.cyanD}, transparent)`, borderRadius: 12, border: `1px solid ${C.cyan}15`, lineHeight: 1.6 }}>
-                The valley of death \u2014 CPA paid upfront, recouped over months. The curve crossing zero = payback point. Everything above is pure profit.
-              </div>
-            </Glass>
-          </>
-        )}
-
         {/* ═══ SENSITIVITY ═══ */}
         {activeTab === "sensitivity" && !isComparing && (
           <Glass style={{ padding: gpL }} glow C={C}>
             <div style={{ marginBottom: 22 }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: C.sub, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4, display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 14 }}>{"\u25CE"}</span> Sensitivity Analysis</div>
-              <div style={{ fontSize: r(20, 18, 16), fontWeight: 700, color: C.text }}>What if {sensiAxis === "cpa" ? "CPA" : "AOV"} shifts at peak budget?</div>
+              <div style={{ fontSize: r(20, 18, 16), fontWeight: 700, color: C.text }}>What if {sensiAxis === "cpa" ? "CPA" : "AOV"} shifts at peak daily budget?</div>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
               <span style={{ fontSize: 12, color: C.sub, fontWeight: 500 }}>Stress Test:</span>
@@ -901,7 +900,7 @@ export default function App() {
               ))}
             </div>
             <div style={{ marginBottom: 18, padding: "12px 16px", background: C.card, borderRadius: 12, border: `1px solid ${C.border}`, fontSize: 12, color: C.sub, lineHeight: 1.5 }}>
-              Testing at <strong style={{ color: C.text }}>{fmt(peak.budget)} budget</strong> with base <strong style={{ color: C.text }}>{sensiAxis === "cpa" ? `CPA $${peak.cpa.toFixed(2)}` : `AOV $${sc.aov.toFixed(2)}`}</strong>. Break-even CPA: <strong style={{ color: C.amber }}>${breakevenCpa.toFixed(2)}</strong>
+              Testing at <strong style={{ color: C.text }}>{fmt(peak.budget)}/day budget</strong> with base <strong style={{ color: C.text }}>{sensiAxis === "cpa" ? `CPA $${peak.cpa.toFixed(2)}` : `AOV $${sc.aov.toFixed(2)}`}</strong>. Break-even CPA: <strong style={{ color: C.amber }}>${breakevenCpa.toFixed(2)}</strong>
             </div>
             <ResponsiveContainer width="100%" height={chartH3}>
               <AreaChart data={sensiData} margin={{ top: 10, right: r(30, 20, 10), left: r(20, 10, 0), bottom: 10 }}>
