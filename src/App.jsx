@@ -56,37 +56,11 @@ const THEMES = {
     insetHighlight: "rgba(255,255,255,0.7)", insetShadow: "rgba(0,0,0,0.04)",
     glowMint: "rgba(5,150,105,0.06)",
   },
-  gradient: {
-    bg: "#0f0c29", bgGradient: "linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%)",
-    card: "rgba(255,255,255,0.04)",
-    glass: "rgba(255,255,255,0.06)", glassHover: "rgba(255,255,255,0.1)", glassActive: "rgba(255,255,255,0.13)",
-    border: "rgba(255,255,255,0.08)", borderLt: "rgba(255,255,255,0.13)", borderGlow: "rgba(255,255,255,0.2)",
-    text: "#f5f0ff", sub: "#a399c0", dim: "#6a5f8a",
-    mint: "#34d399", mintD: "rgba(52,211,153,0.12)", mintG: "rgba(52,211,153,0.25)",
-    red: "#fb7185", redD: "rgba(251,113,133,0.1)",
-    amber: "#fbbf24", amberD: "rgba(251,191,36,0.1)",
-    blue: "#818cf8", blueD: "rgba(129,140,248,0.1)",
-    purple: "#c084fc", purpleD: "rgba(192,132,252,0.12)",
-    cyan: "#22d3ee", cyanD: "rgba(34,211,238,0.1)",
-    inputBg: "rgba(255,255,255,0.03)", inputFocusBg: "rgba(52,211,153,0.04)",
-    tooltipBg: "rgba(15,12,41,0.97)", infoBg: "rgba(15,12,41,0.98)",
-    orbA: "radial-gradient(circle, rgba(192,132,252,0.1), rgba(129,140,248,0.04) 40%, transparent 70%)",
-    orbB: "radial-gradient(circle, rgba(52,211,153,0.08), transparent 70%)",
-    orbC: "radial-gradient(circle, rgba(251,191,36,0.06), transparent 65%)",
-    gridLine: "rgba(255,255,255,0.04)", scrollThumb: "rgba(255,255,255,0.1)",
-    topEdge: "linear-gradient(90deg, transparent 0%, rgba(192,132,252,0.15) 20%, rgba(129,140,248,0.2) 50%, rgba(192,132,252,0.15) 80%, transparent 100%)",
-    shadowBase: "rgba(0,0,0,0.25)", shadowHeavy: "rgba(0,0,0,0.5)",
-    toggleOffBg: "rgba(255,255,255,0.04)", toggleKnobOff: "#6a5f8a",
-    noiseOpacity: 0.02, tierHover: "rgba(255,255,255,0.03)",
-    insetHighlight: "rgba(255,255,255,0.08)", insetShadow: "rgba(0,0,0,0.2)",
-    glowMint: "rgba(52,211,153,0.06)",
-  },
 };
 
 const SCOL_MAP = {
   dark: ["#6ee7b7", "#60a5fa", "#a78bfa", "#fbbf24", "#f87171", "#22d3ee"],
   light: ["#059669", "#2563eb", "#7c3aed", "#d97706", "#dc2626", "#0891b2"],
-  gradient: ["#34d399", "#818cf8", "#c084fc", "#fbbf24", "#fb7185", "#22d3ee"],
 };
 
 /* ─── responsive hook ─── */
@@ -343,9 +317,8 @@ const ThemeSelector = ({ theme, setTheme, C, isMobile }) => (
     border: `1px solid ${C.border}`, backdropFilter: "blur(20px)",
   }}>
     {[
-      { key: "dark", label: "Dark", preview: "#0a0a10" },
       { key: "light", label: "Light", preview: "#f0f1f5" },
-      { key: "gradient", label: "Gradient", preview: "linear-gradient(135deg, #302b63, #24243e)" },
+      { key: "dark", label: "Dark", preview: "#0a0a10" },
     ].map(t => (
       <button key={t.key} className="btn" onClick={() => setTheme(t.key)} style={{
         padding: isMobile ? "7px 10px" : "7px 14px", borderRadius: 11, fontSize: 11, fontWeight: 600,
@@ -368,7 +341,7 @@ const ThemeSelector = ({ theme, setTheme, C, isMobile }) => (
 /* ══════════════════════════ MAIN ══════════════════════════ */
 export default function App() {
   const [theme, setTheme] = useState(() => {
-    try { return localStorage.getItem("pe-theme") || "dark"; } catch { return "dark"; }
+    try { return localStorage.getItem("pe-theme") || "light"; } catch { return "light"; }
   });
   const C = THEMES[theme];
   const SCOL = SCOL_MAP[theme];
@@ -519,15 +492,15 @@ export default function App() {
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <div style={{ width: 10, height: 10, borderRadius: "50%", background: `linear-gradient(135deg, ${C.mint}, ${C.cyan})`, boxShadow: `0 0 14px ${C.mintG}`, animation: "breathe 3s ease-in-out infinite" }} />
-              <span style={{ fontSize: 11, fontWeight: 700, color: C.mint, textTransform: "uppercase", letterSpacing: "0.18em" }}>Facebook Ads Profit Simulator</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: C.mint, textTransform: "uppercase", letterSpacing: "0.18em" }}>Ad Spend Profit Simulator</span>
             </div>
             <ThemeSelector theme={theme} setTheme={setTheme} C={C} isMobile={bp.isMobile} />
           </div>
           <h1 style={{ fontSize: r(38, 30, 24), fontWeight: 800, color: C.text, lineHeight: 1.1, letterSpacing: "-0.02em" }}>
-            Budget \u2192 Profit<span style={{ background: `linear-gradient(135deg, ${C.mint}, ${C.cyan})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}> Engine</span>
+            {"Profit "}<span style={{ backgroundImage: `linear-gradient(135deg, ${C.mint}, ${C.cyan})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", color: "transparent" }}>Curve</span>
           </h1>
           <p style={{ fontSize: r(14, 13, 12), color: C.sub, marginTop: 8, maxWidth: 640, lineHeight: 1.6 }}>
-            Model diminishing returns with auto-scaling CPA decay, simulate LTV payback curves, and stress-test your unit economics.
+            Model diminishing returns with auto-scaling CPA decay, simulate LTV payback curves, and stress-test your unit economics before you scale.
           </p>
         </div>
 
@@ -706,7 +679,7 @@ export default function App() {
               <Glass style={{ padding: gp, marginBottom: 16, animation: "fadeScale 0.5s cubic-bezier(0.2,0,0,1) 0.1s both" }} C={C}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 6 }}>
                   <div style={{ fontSize: 11, fontWeight: 600, color: C.sub, textTransform: "uppercase", letterSpacing: "0.1em", display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 14 }}>{"\u25A4"}</span> {tiers.length} Steps \u00B7 {DECAY_INFO[sc.decayType].label} Decay @ {(sc.decayRate * 100).toFixed(0)}%
+                    <span style={{ fontSize: 14 }}>{"\u25A4"}</span> {tiers.length} Steps {"\u00B7"} {DECAY_INFO[sc.decayType].label} Decay @ {(sc.decayRate * 100).toFixed(0)}%
                   </div>
                 </div>
                 <div style={{ overflowX: "auto", maxHeight: 360, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
