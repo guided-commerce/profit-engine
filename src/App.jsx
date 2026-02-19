@@ -458,6 +458,13 @@ export default function App() {
   const breakeven = useMemo(() => data.find(d => d.net < 0), [data]);
   const breakevenCpa = useMemo(() => sc.aov - effectiveExpenses, [sc.aov, effectiveExpenses]);
 
+  // Detect if profit is still rising at the last step (no peak found within range)
+  const profitStillRising = useMemo(() => {
+    if (data.length < 2) return false;
+    const lastIdx = data.length - 1;
+    return data[lastIdx].net >= data[lastIdx - 1].net && data[lastIdx].net > 0 && peak.budget === data[lastIdx].budget;
+  }, [data, peak]);
+
   const sensiData = useMemo(() => {
     const steps = 13;
     return Array.from({ length: steps }, (_, i) => {
@@ -780,6 +787,23 @@ export default function App() {
                     <div style={{ padding: "10px 14px", background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, fontSize: 11, color: C.dim, lineHeight: 1.5 }}>
                       <strong style={{ color: C.sub }}>Tip:</strong> Check your Facebook Ads Manager at the ad set level. The "Estimated Results" graph shows how your CPA scales with spend. Use linear for steady increases, exponential for aggressive scaling, or logarithmic if CPA plateaus.
                     </div>
+                    {profitStillRising && (
+                      <div style={{
+                        marginTop: 12, padding: "12px 16px", borderRadius: 12,
+                        background: `linear-gradient(135deg, ${C.mintD}, ${C.cyan}08)`,
+                        border: `1px solid ${C.mint}25`,
+                        display: "flex", alignItems: "flex-start", gap: 10,
+                        animation: "fadeScale 0.3s ease both",
+                      }}>
+                        <span style={{ fontSize: 18, lineHeight: 1, flexShrink: 0 }}>{"\u{1F4C8}"}</span>
+                        <div>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: C.mint, marginBottom: 4 }}>Profit is still increasing</div>
+                          <div style={{ fontSize: 11, color: C.sub, lineHeight: 1.5 }}>
+                            Based on your current settings, profit hasn't peaked yet within the modeled range. You can still increase your daily budget and absorb higher CPA before hitting diminishing returns. Try adding more steps or increasing the budget range to find the true profit peak.
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </>
                 ) : (
                   <div style={{ fontSize: 13, color: C.sub, lineHeight: 1.6 }}>Manually define each budget tier and CPA below. Toggle Auto Decay to generate tiers from a curve model.</div>
@@ -989,22 +1013,26 @@ export default function App() {
               </ResponsiveContainer>
             </Glass>
             {!isComparing && (
-              <Glass style={{ padding: gpL }} C={C}>
+              <Glass style={{ padding: gpL }} glow C={C}>
                 <div style={{ marginBottom: 22 }}>
                   <div style={{ fontSize: 11, fontWeight: 600, color: C.sub, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4, display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 14 }}>{"\u25A6"}</span> Breakdown</div>
                   <div style={{ fontSize: r(20, 18, 16), fontWeight: 700, color: C.text }}>Revenue vs. Cost Composition</div>
                 </div>
                 <ResponsiveContainer width="100%" height={chartH2}>
                   <ComposedChart data={chartD.map(d => ({ label: d.label, Revenue: Math.round(d.revenue), "Ad Spend": Math.round(d.budget), "Fulfillment": Math.round(d.orders * effectiveExpenses), ...(fixedDaily > 0 ? { "Fixed Overhead": Math.round(fixedDaily) } : {}), "Net Profit": Math.round(d.net) }))} margin={{ top: 10, right: r(30, 20, 10), left: r(20, 10, 0), bottom: 10 }}>
+                    <defs>
+                      <linearGradient id="barAdSpend" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={C.red} stopOpacity={0.35} /><stop offset="100%" stopColor={C.red} stopOpacity={0.15} /></linearGradient>
+                      <linearGradient id="barFulfill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={C.amber} stopOpacity={0.3} /><stop offset="100%" stopColor={C.amber} stopOpacity={0.12} /></linearGradient>
+                      <linearGradient id="barFixed" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={C.purple} stopOpacity={0.3} /><stop offset="100%" stopColor={C.purple} stopOpacity={0.12} /></linearGradient>
+                    </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke={C.gridLine} />
                     <XAxis dataKey="label" tick={{ fontSize: 11, fill: C.sub }} axisLine={{ stroke: C.border }} tickLine={false} />
                     <YAxis tick={{ fontSize: 11, fill: C.sub }} axisLine={{ stroke: C.border }} tickLine={false} tickFormatter={v => fmt(v)} />
                     <Tooltip content={<ChartTip C={C} />} />
                     <Legend formatter={v => <span style={{ color: C.sub, fontSize: 11 }}>{v}</span>} />
-                    <Bar dataKey="Ad Spend" stackId="c" fill={C.red} fillOpacity={0.45} />
-                    <Bar dataKey="Fulfillment" stackId="c" fill={C.amber} fillOpacity={0.4} />
-                    {fixedDaily > 0 && <Bar dataKey="Fixed Overhead" stackId="c" fill={C.purple} fillOpacity={0.4} radius={[4, 4, 0, 0]} />}
-                    {fixedDaily <= 0 && <Bar dataKey="Fulfillment" stackId="__noop" fill="transparent" radius={[4, 4, 0, 0]} />}
+                    <Bar dataKey="Ad Spend" stackId="c" fill="url(#barAdSpend)" stroke={C.red} strokeOpacity={0.2} strokeWidth={1} />
+                    <Bar dataKey="Fulfillment" stackId="c" fill="url(#barFulfill)" stroke={C.amber} strokeOpacity={0.2} strokeWidth={1} radius={fixedDaily <= 0 ? [4, 4, 0, 0] : undefined} />
+                    {fixedDaily > 0 && <Bar dataKey="Fixed Overhead" stackId="c" fill="url(#barFixed)" stroke={C.purple} strokeOpacity={0.2} strokeWidth={1} radius={[4, 4, 0, 0]} />}
                     <Line type="monotone" dataKey="Revenue" stroke={C.blue} strokeWidth={2.5} dot={{ fill: C.blue, r: 3 }} />
                     <Line type="monotone" dataKey="Net Profit" stroke={C.mint} strokeWidth={2.5} strokeDasharray="5 3" dot={{ fill: C.mint, r: 3 }} />
                   </ComposedChart>
@@ -1063,7 +1091,25 @@ export default function App() {
           </Glass>
         )}
 
-        <div style={{ textAlign: "center", color: C.dim, fontSize: 11, marginTop: 28, letterSpacing: "0.02em" }}>Find where profit peaks before diminishing returns erode your margins.</div>
+        {/* ─── FOOTER ─── */}
+        <div style={{ textAlign: "center", marginTop: 40, paddingBottom: 20 }}>
+          {/* Centered Profit Curve logo */}
+          <h2 style={{ fontSize: r(28, 24, 20), fontWeight: 800, color: C.text, lineHeight: 1.1, letterSpacing: "-0.02em", marginBottom: 8 }}>
+            {"Profit "}<span style={{ backgroundImage: `linear-gradient(135deg, ${C.mint}, ${C.cyan})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", color: "transparent" }}>Curve</span>
+          </h2>
+          <div style={{ color: C.dim, fontSize: 11, letterSpacing: "0.02em", marginBottom: 16 }}>Find where profit peaks before diminishing returns erode your margins.</div>
+          <div style={{ color: C.dim, fontSize: 12 }}>
+            A completely free tool by{" "}
+            <a href="https://www.linkedin.com/in/miguelfacusse/" target="_blank" rel="noopener noreferrer" style={{
+              color: C.mint, textDecoration: "none", fontWeight: 600,
+              borderBottom: `1px solid ${C.mint}30`, paddingBottom: 1,
+              transition: "all 0.2s ease",
+            }}
+              onMouseEnter={e => { e.target.style.borderBottomColor = C.mint; e.target.style.color = C.cyan; }}
+              onMouseLeave={e => { e.target.style.borderBottomColor = C.mint + "30"; e.target.style.color = C.mint; }}
+            >Miguel Facusse</a>
+          </div>
+        </div>
       </div>
     </div>
   );
