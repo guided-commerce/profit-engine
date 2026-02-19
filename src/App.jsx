@@ -96,16 +96,35 @@ const DECAY_INFO = {
   logarithmic: { label: "Logarithmic", desc: "CPA rises quickly at first, then levels off. Optimistic scaling model.", icon: "\u2312" },
 };
 
+/* ─── avg days per month for fixed overhead ─── */
+const AVG_DAYS_PER_MONTH = 30.44;
+
 /* ─── scenario ─── */
 const mkScenario = (id, name) => ({
   id, name, aov: 160, expenses: 20,
   useDecay: true, startBudget: 10000, increment: 1000, numSteps: 20,
   startCpa: 70, decayRate: 2, decayType: "linear",
+  /* expense breakdown */
+  expenseBreakdown: false,
+  processingFeePct: 2.9,
+  shippingPerOrder: 5,
+  fulfillmentPerOrder: 3,
+  cogsPerOrder: 10,
+  otherPerOrder: 0,
+  /* fixed monthly overhead */
+  fixedMonthly: 0,
   manualTiers: [
     { budget: 10000, cpa: 18 }, { budget: 15000, cpa: 22 },
     { budget: 20000, cpa: 28 }, { budget: 25000, cpa: 36 }, { budget: 30000, cpa: 48 },
   ],
 });
+
+/* ─── compute effective expenses from breakdown ─── */
+const computeExpenses = (sc) => {
+  if (!sc.expenseBreakdown) return sc.expenses;
+  const processingFee = (sc.aov * (sc.processingFeePct || 0)) / 100;
+  return processingFee + (sc.shippingPerOrder || 0) + (sc.fulfillmentPerOrder || 0) + (sc.cogsPerOrder || 0) + (sc.otherPerOrder || 0);
+};
 
 /* ─── localStorage persistence ─── */
 const STORAGE_KEY = "pe-state";
@@ -122,11 +141,11 @@ const saveState = (state) => {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch {}
 };
 
-/* ─── calc ─── */
-const calcTier = (budget, cpa, aov, expenses) => {
+/* ─── calc (now includes fixedDailyOverhead) ─── */
+const calcTier = (budget, cpa, aov, expenses, fixedDailyOverhead = 0) => {
   const orders = budget / cpa;
   const revenue = orders * aov;
-  const totalCost = budget + orders * expenses;
+  const totalCost = budget + orders * expenses + fixedDailyOverhead;
   const net = revenue - totalCost;
   const margin = revenue > 0 ? (net / revenue) * 100 : 0;
   const roas = budget > 0 ? revenue / budget : 0;
@@ -232,7 +251,7 @@ const Toggle = ({ value, onChange, label, color, C }) => {
   );
 };
 
-/* ─── NumInput with custom steppers ─── */
+/* ─── NumInput with custom steppers (FIXED: minWidth on center) ─── */
 const NumInput = ({ label, value, onChange, prefix = "$", step = 1, min = 0, color, info, C, displayValue }) => {
   const [focused, setFocused] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -242,7 +261,7 @@ const NumInput = ({ label, value, onChange, prefix = "$", step = 1, min = 0, col
   const [hovL, setHovL] = useState(false);
   const [hovR, setHovR] = useState(false);
   const btnStyle = (side, hov) => ({
-    width: 40, minHeight: 44, display: "flex", alignItems: "center", justifyContent: "center",
+    width: 36, minWidth: 36, flexShrink: 0, minHeight: 44, display: "flex", alignItems: "center", justifyContent: "center",
     background: hov ? C.glassHover : C.glass,
     border: `1px solid ${C.border}`,
     borderRadius: side === "left" ? "12px 0 0 12px" : "0 12px 12px 0",
@@ -266,15 +285,15 @@ const NumInput = ({ label, value, onChange, prefix = "$", step = 1, min = 0, col
           onMouseEnter={() => setHovL(true)} onMouseLeave={() => setHovL(false)}
           style={btnStyle("left", hovL)}
         >&minus;</button>
-        <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
-          {showPrefix && <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: C.dim, fontSize: 13, fontWeight: 600, pointerEvents: "none", zIndex: 2 }}>{prefix}</span>}
+        <div style={{ position: "relative", flex: 1, minWidth: 70 }}>
+          {showPrefix && <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: C.dim, fontSize: 13, fontWeight: 600, pointerEvents: "none", zIndex: 2 }}>{prefix}</span>}
           <input
             type="text" inputMode="decimal" value={shown}
             onChange={e => { setEditStr(e.target.value); const v = parseFloat(e.target.value); if (!isNaN(v)) onChange(v); }}
             onBlur={e => { setFocused(false); setEditing(false); const v = parseFloat(e.target.value); if (isNaN(v)) onChange(min); }}
             onFocus={() => { setFocused(true); setEditing(true); setEditStr(String(value)); }}
             style={{
-              width: "100%", height: "100%", padding: `12px 14px 12px ${showPrefix ? 28 : 14}px`,
+              width: "100%", height: "100%", padding: `12px 10px 12px ${showPrefix ? 26 : 10}px`,
               background: focused ? C.inputFocusBg : C.inputBg,
               border: `1px solid ${focused ? C.mint : C.border}`,
               borderRadius: 0, borderLeft: "none", borderRight: "none",
@@ -411,6 +430,21 @@ export default function App() {
     }));
   }, [activeId]);
 
+  // Compute effective expenses (handles breakdown mode)
+  const effectiveExpenses = useMemo(() => computeExpenses(sc), [sc]);
+  // Auto-sync the expenses field when breakdown is on
+  useEffect(() => {
+    if (sc.expenseBreakdown) {
+      const computed = computeExpenses(sc);
+      if (Math.abs(computed - sc.expenses) > 0.005) {
+        upSc("expenses", Math.round(computed * 100) / 100);
+      }
+    }
+  }, [sc.expenseBreakdown, sc.aov, sc.processingFeePct, sc.shippingPerOrder, sc.fulfillmentPerOrder, sc.cogsPerOrder, sc.otherPerOrder]);
+
+  // Fixed daily overhead from monthly
+  const fixedDaily = useMemo(() => (sc.fixedMonthly || 0) / AVG_DAYS_PER_MONTH, [sc.fixedMonthly]);
+
   const tiers = useMemo(() => {
     if (!sc.useDecay) return sc.manualTiers;
     return Array.from({ length: sc.numSteps }, (_, i) => ({
@@ -419,20 +453,22 @@ export default function App() {
     }));
   }, [sc.useDecay, sc.startBudget, sc.increment, sc.numSteps, sc.startCpa, sc.decayRate, sc.decayType, sc.manualTiers]);
 
-  const data = useMemo(() => tiers.map(t => calcTier(t.budget, t.cpa, sc.aov, sc.expenses)), [tiers, sc.aov, sc.expenses]);
+  const data = useMemo(() => tiers.map(t => calcTier(t.budget, t.cpa, sc.aov, effectiveExpenses, fixedDaily)), [tiers, sc.aov, effectiveExpenses, fixedDaily]);
   const peak = useMemo(() => data.reduce((b, d) => d.net > b.net ? d : b, data[0]), [data]);
   const breakeven = useMemo(() => data.find(d => d.net < 0), [data]);
-  const breakevenCpa = useMemo(() => sc.aov - sc.expenses, [sc.aov, sc.expenses]);
+  const breakevenCpa = useMemo(() => sc.aov - effectiveExpenses, [sc.aov, effectiveExpenses]);
 
   const sensiData = useMemo(() => {
     const steps = 13;
     return Array.from({ length: steps }, (_, i) => {
       const pct = -sensiRange + (2 * sensiRange / (steps - 1)) * i;
       const mult = 1 + pct / 100;
-      const tc = sensiAxis === "cpa" ? calcTier(peak.budget, peak.cpa * mult, sc.aov, sc.expenses) : calcTier(peak.budget, peak.cpa, sc.aov * mult, sc.expenses);
+      const tc = sensiAxis === "cpa"
+        ? calcTier(peak.budget, peak.cpa * mult, sc.aov, effectiveExpenses, fixedDaily)
+        : calcTier(peak.budget, peak.cpa, sc.aov * mult, effectiveExpenses, fixedDaily);
       return { label: `${pct >= 0 ? "+" : ""}${pct.toFixed(0)}%`, pct, netProfit: Math.round(tc.net), margin: tc.margin, isBase: Math.abs(pct) < 0.1 };
     });
-  }, [sc, sensiAxis, sensiRange, peak]);
+  }, [sc, sensiAxis, sensiRange, peak, effectiveExpenses, fixedDaily]);
 
   const compData = useMemo(() => {
     if (!showCompare || scenarios.length < 2) return [];
@@ -441,7 +477,13 @@ export default function App() {
       const row = {};
       scenarios.forEach(s => {
         const t = s.useDecay ? { budget: s.startBudget + s.increment * i, cpa: decayFns[s.decayType](s.startCpa, s.decayRate, i) } : (s.manualTiers[i] || null);
-        if (t) { const d = calcTier(t.budget, t.cpa, s.aov, s.expenses); row.label = row.label || fmt(t.budget); row[s.name] = Math.round(d.net); }
+        if (t) {
+          const sExp = computeExpenses(s);
+          const sFD = (s.fixedMonthly || 0) / AVG_DAYS_PER_MONTH;
+          const d = calcTier(t.budget, t.cpa, s.aov, sExp, sFD);
+          row.label = row.label || fmt(t.budget);
+          row[s.name] = Math.round(d.net);
+        }
       });
       return row;
     }).filter(r => r.label);
@@ -613,18 +655,88 @@ export default function App() {
           <>
             {/* ROW 1: Economics + Decay */}
             <div style={{ display: "grid", gridTemplateColumns: r("1fr 1fr", "1fr 1fr", "1fr"), gap: 16, marginBottom: 16, animation: "fadeScale 0.5s cubic-bezier(0.2,0,0,1) both", minWidth: 0 }}>
+              {/* ─── UNIT ECONOMICS ─── */}
               <Glass style={{ padding: gp }} C={C}>
                 <div style={{ fontSize: 11, fontWeight: 600, color: C.sub, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 18, display: "flex", alignItems: "center", gap: 8 }}>
                   <span style={{ fontSize: 14 }}>{"\u25C8"}</span> Unit Economics
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fit, minmax(${r(160, 150, 999)}px, 1fr))`, gap: 14 }}>
+
+                {/* CLV */}
+                <div style={{ marginBottom: 14 }}>
                   <NumInput label="Customer Lifetime Value" value={sc.aov} onChange={v => upSc("aov", v)} step={0.5} C={C} displayValue={sc.aov.toFixed(2)}
                     info="Use AOV (average order value) for first-purchase profitability, or use full LTV (lifetime value) to model long-term profitability across all repeat purchases. Higher CLV allows higher CPA." />
-                  <NumInput label="Avg Expenses / Order" value={sc.expenses} onChange={v => upSc("expenses", v)} step={0.5} C={C} displayValue={sc.expenses.toFixed(2)}
-                    info="Include ALL variable costs per order: COGS (product cost), shipping, fulfillment/pick-pack, payment processing fees, packaging, and returns/refund allowance." />
                 </div>
+
+                {/* EXPENSES: Toggle between manual and breakdown */}
+                <div style={{ marginBottom: 4 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, flexWrap: "wrap", gap: 6 }}>
+                    <label style={{ fontSize: 10, fontWeight: 600, color: C.dim, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                      Expenses / Order
+                      <InfoTip text="Total variable cost per order. Use the breakdown calculator to itemize processing fees, shipping, fulfillment, COGS, and other costs. Or enter a single total manually." C={C} />
+                    </label>
+                    <button className="btn" onClick={() => upSc("expenseBreakdown", !sc.expenseBreakdown)} style={{
+                      padding: "4px 10px", borderRadius: 8, fontSize: 10, fontWeight: 600,
+                      background: sc.expenseBreakdown ? C.mintD : "transparent",
+                      border: `1px solid ${sc.expenseBreakdown ? C.mint + "30" : C.border}`,
+                      color: sc.expenseBreakdown ? C.mint : C.dim,
+                    }}>
+                      {sc.expenseBreakdown ? "\u25B2 Simple" : "\u25BC Breakdown"}
+                    </button>
+                  </div>
+
+                  {!sc.expenseBreakdown ? (
+                    /* Simple mode: single expenses input */
+                    <NumInput value={sc.expenses} onChange={v => upSc("expenses", v)} step={0.5} C={C} displayValue={sc.expenses.toFixed(2)} />
+                  ) : (
+                    /* Breakdown mode */
+                    <div style={{ animation: "fadeScale 0.25s ease both" }}>
+                      <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fit, minmax(${r(140, 130, 999)}px, 1fr))`, gap: 10, marginBottom: 10 }}>
+                        <NumInput label="Processing Fee %" value={sc.processingFeePct ?? 2.9} onChange={v => upSc("processingFeePct", v)} prefix="" step={0.1} min={0} C={C}
+                          displayValue={(sc.processingFeePct ?? 2.9).toFixed(1) + "%"}
+                          info={`Payment processing fee as % of CLV. At ${fmtC(sc.aov)} CLV = ${fmtC(sc.aov * (sc.processingFeePct || 2.9) / 100)}/order`} />
+                        <NumInput label="Shipping / Order" value={sc.shippingPerOrder ?? 5} onChange={v => upSc("shippingPerOrder", v)} step={0.5} C={C}
+                          displayValue={(sc.shippingPerOrder ?? 5).toFixed(2)} />
+                        <NumInput label="Fulfillment / Order" value={sc.fulfillmentPerOrder ?? 3} onChange={v => upSc("fulfillmentPerOrder", v)} step={0.5} C={C}
+                          displayValue={(sc.fulfillmentPerOrder ?? 3).toFixed(2)}
+                          info="Pick, pack, and handling costs per order." />
+                      </div>
+                      <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fit, minmax(${r(140, 130, 999)}px, 1fr))`, gap: 10, marginBottom: 10 }}>
+                        <NumInput label="COGS / Order" value={sc.cogsPerOrder ?? 10} onChange={v => upSc("cogsPerOrder", v)} step={0.5} C={C}
+                          displayValue={(sc.cogsPerOrder ?? 10).toFixed(2)}
+                          info="Cost of goods sold. The direct cost of the product(s) in this order." />
+                        <NumInput label="Other / Order" value={sc.otherPerOrder ?? 0} onChange={v => upSc("otherPerOrder", v)} step={0.5} C={C}
+                          displayValue={(sc.otherPerOrder ?? 0).toFixed(2)}
+                          info="Any other variable costs: returns allowance, packaging, inserts, etc." />
+                      </div>
+                      {/* Computed total */}
+                      <div style={{
+                        padding: "10px 14px", borderRadius: 10, background: C.card, border: `1px solid ${C.border}`,
+                        display: "flex", alignItems: "center", justifyContent: "space-between",
+                        fontSize: 12, fontWeight: 600,
+                      }}>
+                        <span style={{ color: C.sub }}>Total Expenses / Order</span>
+                        <span style={{ color: C.mint, fontFamily: "'JetBrains Mono', monospace", fontSize: 14, fontWeight: 700 }}>{fmtC(effectiveExpenses)}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* FIXED MONTHLY EXPENSES */}
+                <div style={{ marginTop: 14, padding: "14px", borderRadius: 14, background: C.card, border: `1px solid ${C.border}` }}>
+                  <NumInput label="Fixed Monthly Expenses" value={sc.fixedMonthly ?? 0} onChange={v => upSc("fixedMonthly", v)} step={100} C={C}
+                    displayValue={(sc.fixedMonthly ?? 0).toFixed(2)}
+                    info={`Fixed overhead costs per month (rent, salaries, SaaS, etc.). Divided by ${AVG_DAYS_PER_MONTH} days = ${fmtC((sc.fixedMonthly || 0) / AVG_DAYS_PER_MONTH)}/day added to all profitability calculations.`} />
+                  {(sc.fixedMonthly || 0) > 0 && (
+                    <div style={{ marginTop: 8, fontSize: 11, color: C.dim, display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ color: C.amber }}>{"\u21D2"}</span>
+                      <span>Daily overhead: <strong style={{ color: C.amber, fontFamily: "'JetBrains Mono', monospace" }}>{fmtC(fixedDaily)}</strong>/day subtracted from profit</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Summary metrics */}
                 <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                  <Metric small label="Margin Before Ads" value={fmtP(((sc.aov - sc.expenses) / sc.aov) * 100)} color={C.mint} C={C} />
+                  <Metric small label="Margin Before Ads" value={fmtP(((sc.aov - effectiveExpenses) / sc.aov) * 100)} color={C.mint} C={C} />
                   <Metric small label="Break-Even CPA" value={fmtC(breakevenCpa)} sub="absolute max CPA" color={C.amber} C={C} />
                 </div>
               </Glass>
@@ -692,7 +804,7 @@ export default function App() {
                     })}</tr></thead>
                     <tbody>
                       {sc.manualTiers.map((t, i) => {
-                        const d = calcTier(t.budget, t.cpa, sc.aov, sc.expenses);
+                        const d = calcTier(t.budget, t.cpa, sc.aov, effectiveExpenses, fixedDaily);
                         const mono = "'JetBrains Mono',monospace";
                         return (
                           <tr key={i} className="tier-row" style={{ animation: `slideUp 0.25s ease ${i * 0.04}s both` }}>
@@ -772,7 +884,9 @@ export default function App() {
           ) : (
             scenarios.map((s, i) => {
               const sTiers = s.useDecay ? Array.from({ length: s.numSteps }, (_, j) => ({ budget: s.startBudget + s.increment * j, cpa: decayFns[s.decayType](s.startCpa, s.decayRate, j) })) : s.manualTiers;
-              const sData = sTiers.map(t => calcTier(t.budget, t.cpa, s.aov, s.expenses));
+              const sExp = computeExpenses(s);
+              const sFD = (s.fixedMonthly || 0) / AVG_DAYS_PER_MONTH;
+              const sData = sTiers.map(t => calcTier(t.budget, t.cpa, s.aov, sExp, sFD));
               const sPeak = sData.reduce((b, d) => d.net > b.net ? d : b, sData[0]);
               return <Metric key={s.id} label={`${s.name} Peak`} value={fmtF(Math.round(sPeak.net))} sub={`at ${fmt(sPeak.budget)}/day \u00B7 CPA ${fmtC(sPeak.cpa)}`} color={SCOL[i % SCOL.length]} C={C} />;
             })
@@ -881,14 +995,16 @@ export default function App() {
                   <div style={{ fontSize: r(20, 18, 16), fontWeight: 700, color: C.text }}>Revenue vs. Cost Composition</div>
                 </div>
                 <ResponsiveContainer width="100%" height={chartH2}>
-                  <ComposedChart data={chartD.map(d => ({ label: d.label, Revenue: Math.round(d.revenue), "Ad Spend": Math.round(d.budget), "Fulfillment": Math.round(d.orders * sc.expenses), "Net Profit": Math.round(d.net) }))} margin={{ top: 10, right: r(30, 20, 10), left: r(20, 10, 0), bottom: 10 }}>
+                  <ComposedChart data={chartD.map(d => ({ label: d.label, Revenue: Math.round(d.revenue), "Ad Spend": Math.round(d.budget), "Fulfillment": Math.round(d.orders * effectiveExpenses), ...(fixedDaily > 0 ? { "Fixed Overhead": Math.round(fixedDaily) } : {}), "Net Profit": Math.round(d.net) }))} margin={{ top: 10, right: r(30, 20, 10), left: r(20, 10, 0), bottom: 10 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke={C.gridLine} />
                     <XAxis dataKey="label" tick={{ fontSize: 11, fill: C.sub }} axisLine={{ stroke: C.border }} tickLine={false} />
                     <YAxis tick={{ fontSize: 11, fill: C.sub }} axisLine={{ stroke: C.border }} tickLine={false} tickFormatter={v => fmt(v)} />
                     <Tooltip content={<ChartTip C={C} />} />
                     <Legend formatter={v => <span style={{ color: C.sub, fontSize: 11 }}>{v}</span>} />
                     <Bar dataKey="Ad Spend" stackId="c" fill={C.red} fillOpacity={0.45} />
-                    <Bar dataKey="Fulfillment" stackId="c" fill={C.amber} fillOpacity={0.4} radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="Fulfillment" stackId="c" fill={C.amber} fillOpacity={0.4} />
+                    {fixedDaily > 0 && <Bar dataKey="Fixed Overhead" stackId="c" fill={C.purple} fillOpacity={0.4} radius={[4, 4, 0, 0]} />}
+                    {fixedDaily <= 0 && <Bar dataKey="Fulfillment" stackId="__noop" fill="transparent" radius={[4, 4, 0, 0]} />}
                     <Line type="monotone" dataKey="Revenue" stroke={C.blue} strokeWidth={2.5} dot={{ fill: C.blue, r: 3 }} />
                     <Line type="monotone" dataKey="Net Profit" stroke={C.mint} strokeWidth={2.5} strokeDasharray="5 3" dot={{ fill: C.mint, r: 3 }} />
                   </ComposedChart>
@@ -923,6 +1039,7 @@ export default function App() {
             </div>
             <div style={{ marginBottom: 18, padding: "12px 16px", background: C.card, borderRadius: 12, border: `1px solid ${C.border}`, fontSize: 12, color: C.sub, lineHeight: 1.5 }}>
               Testing at <strong style={{ color: C.text }}>{fmt(peak.budget)}/day budget</strong> with base <strong style={{ color: C.text }}>{sensiAxis === "cpa" ? `CPA ${fmtC(peak.cpa)}` : `CLV ${fmtC(sc.aov)}`}</strong>. Break-even CPA: <strong style={{ color: C.amber }}>{fmtC(breakevenCpa)}</strong>
+              {fixedDaily > 0 && <span> | Fixed overhead: <strong style={{ color: C.purple }}>{fmtC(fixedDaily)}</strong>/day</span>}
             </div>
             <ResponsiveContainer width="100%" height={chartH3}>
               <AreaChart data={sensiData} margin={{ top: 10, right: r(30, 20, 10), left: r(20, 10, 0), bottom: 10 }}>
